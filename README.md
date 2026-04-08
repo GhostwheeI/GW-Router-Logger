@@ -1,60 +1,102 @@
 # GW Router Logger
 
-Menu-driven PowerShell syslog collector for residential or small-network router logging on Windows.
+`GW Router Logger` is a menu-driven PowerShell syslog collector for Windows, designed for home labs, residential routers, and small-network troubleshooting.
 
-## Features
+It focuses on the things that usually break first on normal Windows machines: elevation, pathing, firewall access, bind-address selection, log rollover, and clear on-screen status.
 
-- Runs in a normal PowerShell window with a guided menu flow
-- Verifies administrator rights and attempts self-elevation
-- Suggests the local IPv4 address on the adapter using the default gateway
-- Defaults to residential-friendly router logging (`UDP 514`)
-- Shows live listener status, recent events, and last received source details
-- Writes logs into `GW-ROUTER-LOGS` beside the script by default
-- Stores per-source logs and server/runtime logs separately
-- Rotates active logs by size or age, compresses archives, and enforces a 100 MB compressed cap
-- Uses built-in validation and fallbacks for pathing, firewall handling, and other Windows environment differences
+## Why this exists
 
-## Files
+A lot of router logging tools assume too much:
 
-- `GW-Router-Logger.ps1`: main script
-- `GW-ROUTER-LOGS/`: runtime log output folder created by the script
+- that the right IP is obvious
+- that the log folder is writable
+- that Windows Firewall is already configured
+- that the user knows whether to use UDP or TCP
+- that the machine is set up like a clean lab environment
+
+This script does the opposite. It guides setup, validates inputs, uses practical defaults, and stays usable from a regular PowerShell window.
+
+## Highlights
+
+- Menu-driven workflow instead of parameter-heavy startup
+- Administrator check with self-elevation attempt
+- Residential-friendly defaults: `UDP 514`, `TCP disabled`
+- Automatic suggestion of the local IPv4 address tied to the active default gateway
+- Live status dashboard with message counts, sender tracking, and recent events
+- Per-source log files plus a server/runtime log
+- Rolling archive management with compression and a compressed retention cap
+- Path validation and fallback handling for less predictable Windows environments
+- Built to stay readable and maintainable for later troubleshooting or feature additions
 
 ## Requirements
 
-- Windows PowerShell 5.1 or later recommended
+- Windows PowerShell 5.1 or later
 - Administrator rights
-- Windows machine reachable by the router or device sending syslog
+- A router, firewall, switch, or other device capable of sending syslog to this machine
 
-## Usage
+## Quick Start
 
 1. Open PowerShell as Administrator.
-2. Run:
+2. Change into the script folder.
+3. Run:
 
 ```powershell
 .\GW-Router-Logger.ps1
 ```
 
-3. Use the menu to:
-   - start the log listener
-   - change defaults
-   - open the default log folder
+4. In most residential setups:
+   - accept the suggested local IP
+   - accept the common router defaults
+   - accept the default log path
 
-## Default Behavior
+## Default behavior
 
-- Suggests the primary LAN address tied to the active default gateway
-- Uses `UDP 514` and `TCP disabled` when you accept router defaults
-- Saves logs to:
+By default, the script:
+
+- suggests the local address on the adapter currently using the default gateway
+- assumes the most common router syslog setup: `UDP 514`
+- stores logs beside the script in:
 
 ```text
-<script folder>\GW-ROUTER-LOGS
+GW-ROUTER-LOGS
 ```
+
+- writes:
+  - per-source logs under `sources`
+  - server/runtime logs under `server`
+- rotates active logs by size or age
+- compresses rotated logs
+- prunes old compressed archives until retained compressed logs are at or below the configured cap
+
+## Log layout
+
+```text
+GW-ROUTER-LOGS\
+  sources\
+  server\
+```
+
+## Runtime controls
+
+While the listener is running:
+
+- `Q` stops the listener cleanly
+- `O` opens the log folder
+- `Ctrl+C` cancels the script from PowerShell
+
+## Project goals
+
+- Work on normal Windows machines without extra modules
+- Be understandable to someone reading the script later
+- Prefer validation and fallback behavior over hidden assumptions
+- Be useful as a practical router logging tool, not just a demo
 
 ## Notes
 
-- `Q` stops the listener cleanly from inside the script.
-- `Ctrl+C` cancels the running script from PowerShell.
-- If no logs arrive after the wait period, the script offers basic troubleshooting guidance.
+- The script is intentionally PowerShell-first and Windows-focused.
+- The UI is designed to be readable during real use, not overloaded with animation while logs are arriving.
+- Defaults can be adjusted from the built-in `Change defaults` menu.
 
-## GitHub
+## License
 
-This repository is ready to be published as a standalone GitHub project once local GitHub authentication is valid.
+This project is released under the MIT License. See [LICENSE](LICENSE).
