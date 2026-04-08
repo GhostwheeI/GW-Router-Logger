@@ -1,0 +1,6 @@
+GW-ROUTER-LOGS/
+*.zip
+*.log
+*.tmp
+Thumbs.db
+Desktop.ini
