@@ -14,6 +14,7 @@ catch {
 # These script-scoped values act as the main tuning points for future maintenance.
 # Keeping them together makes it easier to adjust behavior without searching the file.
 $script:AppName = 'GW Router Logger'
+$script:Version = '1.0.0'
 $script:MaxCompressedBytes = 100MB
 $script:ActiveLogRotateBytes = 5MB
 $script:ActiveLogRotateMinutes = 60
@@ -21,7 +22,12 @@ $script:RecentEventsMax = 12
 $script:StatusRefreshMilliseconds = 2000
 $script:DefaultUdpPort = 514
 $script:DefaultTcpPort = 514
+$script:DefaultResolveHostNames = $false
+$script:DnsLookupTimeoutMilliseconds = 250
+$script:SourceNameCacheTtlMinutes = 30
+$script:TcpClientIdleTimeoutMinutes = 15
 $script:LastSettings = $null
+$script:SourceNameCache = @{}
 
 function Write-Rule {
     param(
@@ -59,6 +65,7 @@ function Show-StartupSplash {
     Write-UiLine '  (_______)(_______)|/     \|\_______)|_/    \/|/   \__/(_______/' Cyan
     Write-Rule -Width 78 -Color DarkCyan
     Write-UiLine '  GW ROUTER LOGGER' White
+    Write-UiLine ('  Version {0}' -f $script:Version) DarkGray
     Write-UiLine '  Residential-friendly PowerShell syslog collector' DarkGray
     Write-Host
     Write-LabelValue -Label 'Mode' -Value 'Menu-driven foreground listener' -ValueColor Gray
@@ -511,7 +518,7 @@ function Get-RunSettings {
     $defaultBind = $null
     $defaultUdp = $script:DefaultUdpPort
     $defaultTcp = $script:DefaultTcpPort
-    $defaultLookup = $true
+    $defaultLookup = $script:DefaultResolveHostNames
     $defaultLogPath = Join-Path -Path (Get-ScriptRootPath) -ChildPath 'GW-ROUTER-LOGS'
 
     if ($script:LastSettings) {
@@ -635,18 +642,18 @@ function Rotate-And-CompressLog {
     )
 
     if (-not (Test-Path -LiteralPath $LogFilePath)) {
-        return
+        return $false
     }
 
     # Rotate active logs on either size or age so quiet systems still archive regularly
     # and busy systems do not let a single active file grow too large.
     $fileInfo = Get-Item -LiteralPath $LogFilePath
-    $ageMinutes = ((Get-Date) - $fileInfo.LastWriteTime).TotalMinutes
+    $ageMinutes = ((Get-Date).ToUniversalTime() - $fileInfo.CreationTimeUtc).TotalMinutes
     $shouldRotateBySize = $fileInfo.Length -ge $script:ActiveLogRotateBytes
     $shouldRotateByAge = $ageMinutes -ge $script:ActiveLogRotateMinutes
 
     if (-not $shouldRotateBySize -and -not $shouldRotateByAge) {
-        return
+        return $false
     }
 
     Ensure-Directory -Path $ArchiveDirectory | Out-Null
@@ -669,12 +676,14 @@ function Rotate-And-CompressLog {
         if ($State) {
             Add-RecentEvent -State $State -Message ('Archived {0}' -f [IO.Path]::GetFileName($zipPath))
         }
+        return $true
     }
     catch {
         if ($State) {
             $State.LastError = 'Log rotation error: ' + $_.Exception.Message
             Add-RecentEvent -State $State -Message $State.LastError
         }
+        return $false
     }
 }
 
@@ -734,8 +743,10 @@ function Write-LogRecord {
     $line = '{0} [{1}] {2}' -f $timestamp, $Category.ToUpperInvariant(), $Message
     try {
         Add-Content -LiteralPath $targetPath -Value $line -Encoding UTF8
-        Rotate-And-CompressLog -LogFilePath $targetPath -ArchiveDirectory $archiveRoot -State $State
-        Enforce-CompressedArchiveCap -RootPath $Settings.LogRoot -State $State
+        $rotated = Rotate-And-CompressLog -LogFilePath $targetPath -ArchiveDirectory $archiveRoot -State $State
+        if ($rotated) {
+            Enforce-CompressedArchiveCap -RootPath $Settings.LogRoot -State $State
+        }
     }
     catch {
         if ($State) {
@@ -761,20 +772,52 @@ function Resolve-SourceIdentity {
         [bool] $ResolveHostNames
     )
 
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $cacheKey = '{0}|{1}' -f $Address, $ResolveHostNames
+    if ($script:SourceNameCache.ContainsKey($cacheKey)) {
+        $cached = $script:SourceNameCache[$cacheKey]
+        if ($cached.ExpiresUtc -gt $nowUtc) {
+            return $cached.Name
+        }
+    }
+
     if (-not $ResolveHostNames) {
+        $script:SourceNameCache[$cacheKey] = @{
+            Name = $Address
+            ExpiresUtc = $nowUtc.AddMinutes($script:SourceNameCacheTtlMinutes)
+        }
         return $Address
     }
 
+    $resolvedName = $Address
+    $asyncResult = $null
     try {
-        $entry = [System.Net.Dns]::GetHostEntry($Address)
-        if ($entry.HostName) {
-            return '{0}_{1}' -f $entry.HostName, $Address
+        $asyncResult = [System.Net.Dns]::BeginGetHostEntry($Address, $null, $null)
+        $completed = $asyncResult.AsyncWaitHandle.WaitOne($script:DnsLookupTimeoutMilliseconds, $false)
+        if ($completed) {
+            $entry = [System.Net.Dns]::EndGetHostEntry($asyncResult)
+            if ($entry.HostName) {
+                $resolvedName = '{0}_{1}' -f $entry.HostName, $Address
+            }
         }
     }
     catch {
     }
+    finally {
+        if ($asyncResult) {
+            try {
+                $asyncResult.AsyncWaitHandle.Close()
+            }
+            catch {
+            }
+        }
+    }
 
-    return $Address
+    $script:SourceNameCache[$cacheKey] = @{
+        Name = $resolvedName
+        ExpiresUtc = $nowUtc.AddMinutes($script:SourceNameCacheTtlMinutes)
+    }
+    return $resolvedName
 }
 
 function Test-IsReservedFileStem {
@@ -1009,6 +1052,26 @@ function Show-NoLogGuidance {
     Pause-ForUser -Message 'Press Enter to return to the listener'
 }
 
+function Test-TcpClientClosed {
+    param([System.Net.Sockets.TcpClient] $TcpClient)
+
+    try {
+        if (-not $TcpClient.Connected) {
+            return $true
+        }
+
+        $socket = $TcpClient.Client
+        if ($socket.Poll(0, [System.Net.Sockets.SelectMode]::SelectRead) -and $socket.Available -eq 0) {
+            return $true
+        }
+
+        return $false
+    }
+    catch {
+        return $true
+    }
+}
+
 function Get-CompletedTcpMessages {
     param([string] $Buffer)
 
@@ -1155,6 +1218,7 @@ function Start-LogServer {
     Resolve-PreferredLogRoot -Settings $Settings
     $state = New-RuntimeState -Settings $Settings
 
+    Enforce-CompressedArchiveCap -RootPath $Settings.LogRoot -State $state
     Write-ServerEvent -Settings $Settings -State $state -Message 'Server startup requested.'
 
     if ($Settings.UdpPort -gt 0 -and -not (Test-PortAvailable -Address $Settings.BindAddress -Port $Settings.UdpPort -Protocol 'UDP')) {
@@ -1235,6 +1299,7 @@ function Start-LogServer {
                             Stream = $accepted.GetStream()
                             Buffer = ''
                             Address = ([string] $accepted.Client.RemoteEndPoint).Split(':')[0]
+                            LastActivity = Get-Date
                         }
                         [void] $tcpClients.Add($clientState)
                         $connectMessage = 'TCP client connected: {0}' -f $clientState.Address
@@ -1251,7 +1316,19 @@ function Start-LogServer {
             for ($index = $tcpClients.Count - 1; $index -ge 0; $index--) {
                 $clientState = $tcpClients[$index]
                 try {
-                    if (-not $clientState.Client.Connected) {
+                    $idleMinutes = ((Get-Date) - $clientState.LastActivity).TotalMinutes
+                    if ($idleMinutes -ge $script:TcpClientIdleTimeoutMinutes) {
+                        if ($clientState.Buffer) {
+                            Register-ReceivedMessage -Settings $Settings -State $state -Protocol 'TCP' -Address $clientState.Address -RawMessage $clientState.Buffer
+                        }
+                        Add-RecentEvent -State $state -Message ('TCP client idle timeout: {0}' -f $clientState.Address)
+                        $clientState.Stream.Dispose()
+                        $clientState.Client.Dispose()
+                        $tcpClients.RemoveAt($index)
+                        continue
+                    }
+
+                    if (Test-TcpClientClosed -TcpClient $clientState.Client) {
                         if ($clientState.Buffer) {
                             Register-ReceivedMessage -Settings $Settings -State $state -Protocol 'TCP' -Address $clientState.Address -RawMessage $clientState.Buffer
                         }
@@ -1274,6 +1351,7 @@ function Start-LogServer {
                             continue
                         }
 
+                        $clientState.LastActivity = Get-Date
                         $clientState.Buffer += [Text.Encoding]::UTF8.GetString($readBuffer, 0, $bytesRead)
                         $parsed = Get-CompletedTcpMessages -Buffer $clientState.Buffer
                         foreach ($message in $parsed.Messages) {
@@ -1364,6 +1442,11 @@ function Show-EnvironmentSummary {
 
 function Show-DefaultSettingsMenu {
     while ($true) {
+        $hostnameLookupDisplay = 'Disabled'
+        if ($script:DefaultResolveHostNames) {
+            $hostnameLookupDisplay = 'Enabled'
+        }
+
         Clear-Host
         Write-TitleBlock -Title 'GW ROUTER LOGGER' -Subtitle 'Change defaults'
         Write-Host
@@ -1373,7 +1456,10 @@ function Show-DefaultSettingsMenu {
         Write-Host ('4. Active log rotate size:      {0} MB' -f ([int]($script:ActiveLogRotateBytes / 1MB)))
         Write-Host ('5. Active log rotate age:       {0} minutes' -f $script:ActiveLogRotateMinutes)
         Write-Host ('6. Recent event lines shown:    {0}' -f $script:RecentEventsMax)
-        Write-Host '7. Return to main menu'
+        Write-Host ('7. Hostname lookup default:     {0}' -f $hostnameLookupDisplay)
+        Write-Host ('8. DNS lookup timeout:          {0} ms' -f $script:DnsLookupTimeoutMilliseconds)
+        Write-Host ('9. TCP idle timeout:            {0} minutes' -f $script:TcpClientIdleTimeoutMinutes)
+        Write-Host '10. Return to main menu'
         Write-Host
 
         $selection = Read-Host 'Choose a setting to change'
@@ -1399,6 +1485,15 @@ function Show-DefaultSettingsMenu {
                 $script:RecentEventsMax = Read-ValidatedPositiveInt -Prompt 'Recent event lines shown' -Default $script:RecentEventsMax -Minimum 3
             }
             '7' {
+                $script:DefaultResolveHostNames = Read-BooleanChoice -Prompt 'Enable hostname lookup by default' -Default $script:DefaultResolveHostNames
+            }
+            '8' {
+                $script:DnsLookupTimeoutMilliseconds = Read-ValidatedPositiveInt -Prompt 'DNS lookup timeout in milliseconds' -Default $script:DnsLookupTimeoutMilliseconds -Minimum 50
+            }
+            '9' {
+                $script:TcpClientIdleTimeoutMinutes = Read-ValidatedPositiveInt -Prompt 'TCP idle timeout in minutes' -Default $script:TcpClientIdleTimeoutMinutes -Minimum 1
+            }
+            '10' {
                 return
             }
             default {

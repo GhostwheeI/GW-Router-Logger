@@ -2,6 +2,8 @@
 
 `GW Router Logger` is a menu-driven PowerShell syslog collector for Windows, designed for home labs, residential routers, and small-network troubleshooting.
 
+Current release: `v1.0.0`
+
 It focuses on the things that usually break first on normal Windows machines: elevation, pathing, firewall access, bind-address selection, log rollover, and clear on-screen status.
 
 ## Why this exists
@@ -25,6 +27,8 @@ This script does the opposite. It guides setup, validates inputs, uses practical
 - Live status dashboard with message counts, sender tracking, and recent events
 - Per-source log files plus a server/runtime log
 - Rolling archive management with compression and a compressed retention cap
+- Cached, bounded hostname lookup so slow reverse DNS does not stall the listener
+- Stale TCP client cleanup for long-running sessions
 - Path validation and fallback handling for less predictable Windows environments
 - Built to stay readable and maintainable for later troubleshooting or feature additions
 
@@ -55,6 +59,7 @@ By default, the script:
 
 - suggests the local address on the adapter currently using the default gateway
 - assumes the most common router syslog setup: `UDP 514`
+- leaves hostname lookup disabled by default for reliability
 - stores logs beside the script in:
 
 ```text
