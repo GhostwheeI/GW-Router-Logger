@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.1.1 - 2026-05-06
+
+Icon polish release.
+
+### Added
+
+- Custom multi-size Windows icon for the tray app, Start Menu shortcuts, and Apps and Features entry.
+- 256px PNG preview source for the app icon under `assets`.
+
+### Changed
+
+- Tray app now loads `assets\gw-router-logger.ico` instead of the generic Windows application icon.
+- Installer now copies the icon assets and applies the icon to created shortcuts and uninstall metadata.
+
 ## v1.1.0 - 2026-05-06
 
 Tray application release.

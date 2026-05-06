@@ -12,7 +12,7 @@ param(
 # original CLI script intact for users who prefer the menu-driven terminal flow.
 
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.1.0'
+$script:Version = '1.1.1'
 $script:Publisher = 'Ghostwheel'
 $script:DefaultUdpPort = 514
 $script:DefaultTcpPort = 514
@@ -102,6 +102,24 @@ function Get-AppLogRoot {
 
 function Get-AppLogPath {
     return Join-Path -Path (Get-AppLogRoot) -ChildPath 'app.log'
+}
+
+function Get-AppIconPath {
+    return Join-Path -Path (Join-Path -Path (Get-ScriptRootPath) -ChildPath 'assets') -ChildPath 'gw-router-logger.ico'
+}
+
+function Get-AppIcon {
+    $iconPath = Get-AppIconPath
+    if (Test-Path -LiteralPath $iconPath) {
+        try {
+            return New-Object System.Drawing.Icon($iconPath)
+        }
+        catch {
+            Write-AppLog -Message ('App icon load failed: {0}' -f $_.Exception.Message) -Diagnostic
+        }
+    }
+
+    return [System.Drawing.SystemIcons]::Application
 }
 
 function Rotate-AppLog {
@@ -281,6 +299,10 @@ function Sync-StartupShortcut {
         $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Sta -File "{0}"' -f $PSCommandPath
         $shortcut.WorkingDirectory = Get-ScriptRootPath
         $shortcut.Description = 'Start GW Router Logger in the notification area'
+        $iconPath = Get-AppIconPath
+        if (Test-Path -LiteralPath $iconPath) {
+            $shortcut.IconLocation = $iconPath
+        }
         $shortcut.Save()
     }
     catch {
@@ -1621,7 +1643,7 @@ try {
 
     Build-ContextMenu
     $script:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
-    $script:NotifyIcon.Icon = [System.Drawing.SystemIcons]::Application
+    $script:NotifyIcon.Icon = Get-AppIcon
     $script:NotifyIcon.Text = $script:AppName
     $script:NotifyIcon.ContextMenuStrip = $script:ContextMenu
     $script:NotifyIcon.Visible = $true

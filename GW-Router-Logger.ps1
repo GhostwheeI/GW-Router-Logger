@@ -14,7 +14,7 @@ catch {
 # These script-scoped values act as the main tuning points for future maintenance.
 # Keeping them together makes it easier to adjust behavior without searching the file.
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.1.0'
+$script:Version = '1.1.1'
 $script:MaxCompressedBytes = 100MB
 $script:ActiveLogRotateBytes = 5MB
 $script:ActiveLogRotateMinutes = 60

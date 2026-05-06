@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $appName = 'GW Router Logger'
-$version = '1.1.0'
+$version = '1.1.1'
 $publisher = 'Ghostwheel'
 
 function Test-IsAdministrator {
@@ -30,6 +30,7 @@ function New-AppShortcut {
     param(
         [string] $ShortcutPath,
         [string] $TargetScript,
+        [string] $IconPath,
         [switch] $StartListener
     )
 
@@ -44,6 +45,9 @@ function New-AppShortcut {
     $shortcut.Arguments = $arguments
     $shortcut.WorkingDirectory = Split-Path -Parent $TargetScript
     $shortcut.Description = 'Run GW Router Logger in the notification area'
+    if (-not [string]::IsNullOrWhiteSpace($IconPath) -and (Test-Path -LiteralPath $IconPath)) {
+        $shortcut.IconLocation = $IconPath
+    }
     $shortcut.Save()
 }
 
@@ -77,11 +81,17 @@ foreach ($file in $files) {
     Copy-Item -LiteralPath $source -Destination (Join-Path -Path $installRoot -ChildPath $file) -Force
 }
 
+$sourceAssets = Join-Path -Path $sourceRoot -ChildPath 'assets'
+if (Test-Path -LiteralPath $sourceAssets) {
+    Copy-Item -LiteralPath $sourceAssets -Destination (Join-Path -Path $installRoot -ChildPath 'assets') -Recurse -Force
+}
+
 $programs = [Environment]::GetFolderPath('Programs')
 $shortcutFolder = Ensure-Directory -Path (Join-Path -Path $programs -ChildPath 'GW Router Logger')
 $trayScript = Join-Path -Path $installRoot -ChildPath 'GW-Router-Logger.Tray.ps1'
-New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $trayScript
-New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger - Start Listener.lnk') -TargetScript $trayScript -StartListener
+$iconPath = Join-Path -Path (Join-Path -Path $installRoot -ChildPath 'assets') -ChildPath 'gw-router-logger.ico'
+New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $trayScript -IconPath $iconPath
+New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger - Start Listener.lnk') -TargetScript $trayScript -IconPath $iconPath -StartListener
 
 $uninstallScript = Join-Path -Path $installRoot -ChildPath 'Uninstall-GWRouterLogger.ps1'
 $uninstallCommand = '"{0}" -NoProfile -ExecutionPolicy Bypass -File "{1}"' -f "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe", $uninstallScript
@@ -102,7 +112,7 @@ New-ItemProperty -Path $uninstallRoot -Name DisplayName -Value $appName -Propert
 New-ItemProperty -Path $uninstallRoot -Name DisplayVersion -Value $version -PropertyType String -Force | Out-Null
 New-ItemProperty -Path $uninstallRoot -Name Publisher -Value $publisher -PropertyType String -Force | Out-Null
 New-ItemProperty -Path $uninstallRoot -Name InstallLocation -Value $installRoot -PropertyType String -Force | Out-Null
-New-ItemProperty -Path $uninstallRoot -Name DisplayIcon -Value "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force | Out-Null
+New-ItemProperty -Path $uninstallRoot -Name DisplayIcon -Value $iconPath -PropertyType String -Force | Out-Null
 New-ItemProperty -Path $uninstallRoot -Name UninstallString -Value $uninstallCommand -PropertyType String -Force | Out-Null
 New-ItemProperty -Path $uninstallRoot -Name QuietUninstallString -Value ($uninstallCommand + ' -Quiet') -PropertyType String -Force | Out-Null
 New-ItemProperty -Path $uninstallRoot -Name EstimatedSize -Value $estimatedSize -PropertyType DWord -Force | Out-Null
