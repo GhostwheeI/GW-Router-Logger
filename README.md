@@ -1,8 +1,8 @@
 # GW Router Logger
 
-`GW Router Logger` is a menu-driven PowerShell syslog collector for Windows, designed for home labs, residential routers, and small-network troubleshooting.
+`GW Router Logger` is a PowerShell syslog collector for Windows, designed for home labs, residential routers, and small-network troubleshooting.
 
-Current release: `v1.0.0`
+Current release: `v1.1.0`
 
 It focuses on the things that usually break first on normal Windows machines: elevation, pathing, firewall access, bind-address selection, log rollover, and clear on-screen status.
 
@@ -21,6 +21,8 @@ This script does the opposite. It guides setup, validates inputs, uses practical
 ## Highlights
 
 - Menu-driven workflow instead of parameter-heavy startup
+- Notification-area GUI app with right-click controls
+- Apps and Features uninstall registration through the installer
 - Administrator check with self-elevation attempt
 - Residential-friendly defaults: `UDP 514`, `TCP disabled`
 - Automatic suggestion of the local IPv4 address tied to the active default gateway
@@ -39,6 +41,25 @@ This script does the opposite. It guides setup, validates inputs, uses practical
 - A router, firewall, switch, or other device capable of sending syslog to this machine
 
 ## Quick Start
+
+### Tray app
+
+1. Run PowerShell.
+2. Change into the script folder.
+3. Install the app:
+
+```powershell
+.\Install-GWRouterLogger.ps1
+```
+
+4. Open **GW Router Logger** from the Start Menu.
+5. Right-click the tray icon and choose **Configure**.
+
+The tray menu shows the app name and version, live status, listener controls, log shortcuts, settings, about, and exit. The listener can be started or stopped from the right-click menu.
+
+The installer registers the app in Windows **Apps and Features**. Uninstalling from Windows runs `Uninstall-GWRouterLogger.ps1` and removes the app files and shortcuts. Logs and configuration are preserved unless the uninstaller is run manually with `-RemoveData`.
+
+### CLI script
 
 1. Open PowerShell as Administrator.
 2. Change into the script folder.
@@ -73,6 +94,16 @@ GW-ROUTER-LOGS
 - compresses rotated logs
 - prunes old compressed archives until retained compressed logs are at or below the configured cap
 
+The tray app stores its configuration in:
+
+```text
+C:\ProgramData\GW-Router-Logger\config.json
+```
+
+If `C:\ProgramData` is not writable, it falls back to the current user's local app data folder.
+
+Advanced defaults that are not exposed in the tray UI can be edited in that JSON config file. The size handling defaults are visible in Settings but intentionally disabled for editing until a later version.
+
 ## Log layout
 
 ```text
@@ -82,6 +113,14 @@ GW-ROUTER-LOGS\
 ```
 
 ## Runtime controls
+
+Tray app controls are primarily in the right-click menu:
+
+- `Configure` sets listener IP, UDP/TCP ports, hostname lookup, and log folder
+- `Start` and `Stop` control the listener
+- `Open Latest Log` opens the newest `.log` file in Notepad
+- `Open Log Folder` opens the configured log folder
+- `Settings` controls Windows startup, diagnostic logging, theme, firewall exception setup, network ports, and log folder
 
 While the listener is running:
 

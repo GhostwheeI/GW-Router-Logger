@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.1.0 - 2026-05-06
+
+Tray application release.
+
+### Added
+
+- Notification-area GUI app in `GW-Router-Logger.Tray.ps1`.
+- Right-click tray menu with app/version header, dynamic status, configuration, start/stop, latest-log opening, log-folder opening, settings, about, and exit.
+- Listener configuration UI for bind IP, UDP/TCP ports, hostname lookup, and log folder.
+- Settings UI for Windows startup, diagnostic logging, theme selection, firewall exception setup, network ports, and read-only log size handling defaults.
+- Background diagnostic app log with size-controlled rotation.
+- JSON configuration file for advanced settings not exposed directly in the tray UI.
+- Log-folder move handling when the configured log directory changes.
+- Installer and uninstaller scripts that register the app in Windows Apps and Features.
+
+### Changed
+
+- Project version is now `1.1.0`.
+- The CLI script remains available and keeps the existing menu-driven workflow.
+
 ## v1.0.0 - 2026-04-27
 
 Initial public release.
