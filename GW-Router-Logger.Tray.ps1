@@ -13,7 +13,7 @@ param(
 # original CLI script intact for users who prefer the menu-driven terminal flow.
 
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.2.0'
+$script:Version = '1.2.1'
 $script:Publisher = 'Ghostwheel'
 $script:GitHubOwner = 'GhostwheeI'
 $script:GitHubRepo = 'GW-Router-Logger'
@@ -101,6 +101,10 @@ function Get-ConfigPath {
 
 function Get-AppLogRoot {
     return Ensure-Directory -Path (Join-Path -Path (Get-AppDataRoot) -ChildPath 'diagnostics')
+}
+
+function Get-InternalRuntimeLogRoot {
+    return Ensure-Directory -Path (Join-Path -Path (Get-AppLogRoot) -ChildPath 'listener-runtime')
 }
 
 function Get-AppLogPath {
@@ -706,6 +710,114 @@ function Move-LogRoot {
     }
 }
 
+function Move-DirectoryContents {
+    param(
+        [string] $SourcePath,
+        [string] $DestinationPath
+    )
+
+    if (-not (Test-Path -LiteralPath $SourcePath)) {
+        return
+    }
+
+    Ensure-Directory -Path $DestinationPath | Out-Null
+    $children = @(Get-ChildItem -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue)
+    foreach ($child in $children) {
+        Move-Item -LiteralPath $child.FullName -Destination (Join-Path -Path $DestinationPath -ChildPath $child.Name) -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Remove-DirectoryIfEmpty {
+    param([string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $remaining = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)
+    if ($remaining.Count -eq 0) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Resolve-LogLayout {
+    param([hashtable] $Settings)
+
+    $Settings.LogRoot = Ensure-Directory -Path $Settings.LogRoot
+    $Settings.SourceLogRoot = $Settings.LogRoot
+    $Settings.RuntimeLogRoot = Ensure-Directory -Path (Get-InternalRuntimeLogRoot)
+
+    $sourceArchiveRoot = Ensure-Directory -Path (Join-Path -Path $Settings.SourceLogRoot -ChildPath 'archive')
+    $runtimeArchiveRoot = Ensure-Directory -Path (Join-Path -Path $Settings.RuntimeLogRoot -ChildPath 'archive')
+
+    $legacySourceRoot = Join-Path -Path $Settings.LogRoot -ChildPath 'sources'
+    $legacySourceArchiveRoot = Join-Path -Path $legacySourceRoot -ChildPath 'archive'
+    $legacyServerRoot = Join-Path -Path $Settings.LogRoot -ChildPath 'server'
+    $legacyServerArchiveRoot = Join-Path -Path $legacyServerRoot -ChildPath 'archive'
+
+    if (Test-Path -LiteralPath $legacySourceArchiveRoot) {
+        Move-DirectoryContents -SourcePath $legacySourceArchiveRoot -DestinationPath $sourceArchiveRoot
+    }
+    if (Test-Path -LiteralPath $legacySourceRoot) {
+        $sourceFiles = @(Get-ChildItem -LiteralPath $legacySourceRoot -Force -File -ErrorAction SilentlyContinue)
+        foreach ($file in $sourceFiles) {
+            Move-Item -LiteralPath $file.FullName -Destination (Join-Path -Path $Settings.SourceLogRoot -ChildPath $file.Name) -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (Test-Path -LiteralPath $legacyServerArchiveRoot) {
+        Move-DirectoryContents -SourcePath $legacyServerArchiveRoot -DestinationPath $runtimeArchiveRoot
+    }
+    if (Test-Path -LiteralPath $legacyServerRoot) {
+        $serverFiles = @(Get-ChildItem -LiteralPath $legacyServerRoot -Force -File -ErrorAction SilentlyContinue)
+        foreach ($file in $serverFiles) {
+            Move-Item -LiteralPath $file.FullName -Destination (Join-Path -Path $Settings.RuntimeLogRoot -ChildPath $file.Name) -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Remove-DirectoryIfEmpty -Path $legacySourceArchiveRoot
+    Remove-DirectoryIfEmpty -Path $legacySourceRoot
+    Remove-DirectoryIfEmpty -Path $legacyServerArchiveRoot
+    Remove-DirectoryIfEmpty -Path $legacyServerRoot
+}
+
+function Test-PortAvailable {
+    param(
+        [string] $Address,
+        [int] $Port,
+        [ValidateSet('UDP', 'TCP')] [string] $Protocol
+    )
+
+    if ($Port -le 0) {
+        return $true
+    }
+
+    try {
+        $endpoint = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Parse($Address)), $Port
+        if ($Protocol -eq 'UDP') {
+            $client = New-Object System.Net.Sockets.UdpClient
+            try {
+                $client.Client.Bind($endpoint)
+                return $true
+            }
+            finally {
+                $client.Dispose()
+            }
+        }
+
+        $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Parse($Address)), $Port
+        try {
+            $listener.Start()
+            return $true
+        }
+        finally {
+            $listener.Stop()
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
 function Get-LatestLogPath {
     param([hashtable] $Config)
 
@@ -966,12 +1078,12 @@ function New-ListenerScriptBlock {
             )
 
             if ($Category -eq 'server') {
-                $targetPath = Get-SafeLogPath -Directory $Settings.ServerLogRoot -BaseName 'server-current' -Suffix '.log'
-                $archiveRoot = Join-Path -Path $Settings.ServerLogRoot -ChildPath 'archive'
+                $targetPath = Get-SafeLogPath -Directory $Settings.RuntimeLogRoot -BaseName 'server-current' -Suffix '.log'
+                $archiveRoot = Join-Path -Path $Settings.RuntimeLogRoot -ChildPath 'archive'
             }
             else {
                 $targetPath = Get-SafeLogPath -Directory $Settings.SourceLogRoot -BaseName ($SourceName + '-current') -Suffix '.log'
-                $archiveRoot = Join-Path -Path $Settings.SourceLogRoot -ChildPath 'archive'
+                $archiveRoot = Join-Path -Path $Settings.LogRoot -ChildPath 'archive'
             }
 
             $line = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'), $Message
@@ -1048,8 +1160,10 @@ function New-ListenerScriptBlock {
 
         try {
             $Settings.LogRoot = Ensure-Directory -Path $Settings.LogRoot
-            $Settings.SourceLogRoot = Ensure-Directory -Path (Join-Path -Path $Settings.LogRoot -ChildPath 'sources')
-            $Settings.ServerLogRoot = Ensure-Directory -Path (Join-Path -Path $Settings.LogRoot -ChildPath 'server')
+            $Settings.SourceLogRoot = Ensure-Directory -Path $Settings.SourceLogRoot
+            $Settings.RuntimeLogRoot = Ensure-Directory -Path $Settings.RuntimeLogRoot
+            Ensure-Directory -Path (Join-Path -Path $Settings.LogRoot -ChildPath 'archive') | Out-Null
+            Ensure-Directory -Path (Join-Path -Path $Settings.RuntimeLogRoot -ChildPath 'archive') | Out-Null
             Enforce-CompressedArchiveCap -RootPath $Settings.LogRoot
 
             $bindIp = [System.Net.IPAddress]::Parse($Settings.BindAddress)
@@ -1267,8 +1381,7 @@ function Start-Listener {
     }
 
     $settings = $config.Clone()
-    $settings.SourceLogRoot = Join-Path -Path $settings.LogRoot -ChildPath 'sources'
-    $settings.ServerLogRoot = Join-Path -Path $settings.LogRoot -ChildPath 'server'
+    Resolve-LogLayout -Settings $settings
 
     $script:Runtime.StopRequested = $false
     $script:Runtime.LastError = ''
@@ -1277,6 +1390,26 @@ function Start-Listener {
     $script:Runtime.MessageCount = 0
     $script:Runtime.UdpCount = 0
     $script:Runtime.TcpCount = 0
+
+    if ([bool] $settings.UdpEnabled -and -not (Test-PortAvailable -Address $settings.BindAddress -Port ([int] $settings.UdpPort) -Protocol 'UDP')) {
+        [void] [System.Windows.Forms.MessageBox]::Show(
+            ('UDP port {0} is already in use on {1}. Close the other app or service using that port, then try again.' -f $settings.UdpPort, $settings.BindAddress),
+            $script:AppName,
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
+        return
+    }
+
+    if ([bool] $settings.TcpEnabled -and -not (Test-PortAvailable -Address $settings.BindAddress -Port ([int] $settings.TcpPort) -Protocol 'TCP')) {
+        [void] [System.Windows.Forms.MessageBox]::Show(
+            ('TCP port {0} is already in use on {1}. Close the other app or service using that port, then try again.' -f $settings.TcpPort, $settings.BindAddress),
+            $script:AppName,
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
+        return
+    }
 
     try {
         $script:ListenerRunspace = [runspacefactory]::CreateRunspace()

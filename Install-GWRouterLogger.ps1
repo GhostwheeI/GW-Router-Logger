@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $appName = 'GW Router Logger'
-$version = '1.2.0'
+$version = '1.2.1'
 $publisher = 'Ghostwheel'
 
 function Test-IsAdministrator {

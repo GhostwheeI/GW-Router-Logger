@@ -2,7 +2,7 @@
 
 `GW Router Logger` is a PowerShell syslog collector for Windows, designed for home labs, residential routers, and small-network troubleshooting.
 
-Current release: `v1.2.0`
+Current release: `v1.2.1`
 
 It focuses on the things that usually break first on normal Windows machines: elevation, pathing, firewall access, bind-address selection, log rollover, and clear on-screen status.
 
@@ -107,12 +107,14 @@ If `C:\ProgramData` is not writable, it falls back to the current user's local a
 
 Advanced defaults that are not exposed in the tray UI can be edited in that JSON config file. The size handling defaults are visible in Settings but intentionally disabled for editing until a later version.
 
+The log folder you choose is now reserved for router-received logs. Internal runtime/server logs are stored separately under the app data area so the selected folder is not split into `sources` and `server`.
+
 ## Log layout
 
 ```text
 GW-ROUTER-LOGS\
-  sources\
-  server\
+  192.168.50.1-current.log
+  archive\
 ```
 
 ## Runtime controls

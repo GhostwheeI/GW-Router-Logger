@@ -14,7 +14,7 @@ catch {
 # These script-scoped values act as the main tuning points for future maintenance.
 # Keeping them together makes it easier to adjust behavior without searching the file.
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.2.0'
+$script:Version = '1.2.1'
 $script:MaxCompressedBytes = 100MB
 $script:ActiveLogRotateBytes = 5MB
 $script:ActiveLogRotateMinutes = 60
@@ -189,6 +189,93 @@ function Ensure-Directory {
     }
 
     return (Resolve-Path -LiteralPath $Path).Path
+}
+
+function Get-InternalRuntimeLogRoot {
+    $candidateRoots = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramData)) {
+        $candidateRoots += (Join-Path -Path $env:ProgramData -ChildPath 'GW-Router-Logger\server-runtime')
+    }
+    $candidateRoots += (Join-Path -Path (Get-ScriptRootPath) -ChildPath '.gw-router-logger-runtime')
+
+    foreach ($candidate in $candidateRoots) {
+        try {
+            return (Ensure-Directory -Path $candidate)
+        }
+        catch {}
+    }
+
+    throw 'No writable runtime log folder was found for internal server events.'
+}
+
+function Move-DirectoryContents {
+    param(
+        [string] $SourcePath,
+        [string] $DestinationPath
+    )
+
+    if (-not (Test-Path -LiteralPath $SourcePath)) {
+        return
+    }
+
+    Ensure-Directory -Path $DestinationPath | Out-Null
+    $children = @(Get-ChildItem -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue)
+    foreach ($child in $children) {
+        Move-Item -LiteralPath $child.FullName -Destination (Join-Path -Path $DestinationPath -ChildPath $child.Name) -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Remove-DirectoryIfEmpty {
+    param([string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $remaining = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)
+    if ($remaining.Count -eq 0) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Resolve-LogLayout {
+    param([hashtable] $Settings)
+
+    $Settings.LogRoot = Ensure-Directory -Path $Settings.LogRoot
+    $Settings.SourceLogRoot = $Settings.LogRoot
+    $Settings.ServerLogRoot = Get-InternalRuntimeLogRoot
+
+    $sourceArchiveRoot = Ensure-Directory -Path (Join-Path -Path $Settings.SourceLogRoot -ChildPath 'archive')
+    $serverArchiveRoot = Ensure-Directory -Path (Join-Path -Path $Settings.ServerLogRoot -ChildPath 'archive')
+
+    $legacySourceRoot = Join-Path -Path $Settings.LogRoot -ChildPath 'sources'
+    $legacySourceArchiveRoot = Join-Path -Path $legacySourceRoot -ChildPath 'archive'
+    $legacyServerRoot = Join-Path -Path $Settings.LogRoot -ChildPath 'server'
+    $legacyServerArchiveRoot = Join-Path -Path $legacyServerRoot -ChildPath 'archive'
+
+    if (Test-Path -LiteralPath $legacySourceArchiveRoot) {
+        Move-DirectoryContents -SourcePath $legacySourceArchiveRoot -DestinationPath $sourceArchiveRoot
+    }
+    if (Test-Path -LiteralPath $legacySourceRoot) {
+        $sourceFiles = @(Get-ChildItem -LiteralPath $legacySourceRoot -Force -File -ErrorAction SilentlyContinue)
+        foreach ($file in $sourceFiles) {
+            Move-Item -LiteralPath $file.FullName -Destination (Join-Path -Path $Settings.SourceLogRoot -ChildPath $file.Name) -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (Test-Path -LiteralPath $legacyServerArchiveRoot) {
+        Move-DirectoryContents -SourcePath $legacyServerArchiveRoot -DestinationPath $serverArchiveRoot
+    }
+    if (Test-Path -LiteralPath $legacyServerRoot) {
+        $serverFiles = @(Get-ChildItem -LiteralPath $legacyServerRoot -Force -File -ErrorAction SilentlyContinue)
+        foreach ($file in $serverFiles) {
+            Move-Item -LiteralPath $file.FullName -Destination (Join-Path -Path $Settings.ServerLogRoot -ChildPath $file.Name) -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Remove-DirectoryIfEmpty -Path $legacySourceArchiveRoot
+    Remove-DirectoryIfEmpty -Path $legacySourceRoot
+    Remove-DirectoryIfEmpty -Path $legacyServerArchiveRoot
+    Remove-DirectoryIfEmpty -Path $legacyServerRoot
 }
 
 function Get-TimestampString {
@@ -581,10 +668,11 @@ function Get-RunSettings {
         TcpPort = $tcpPort
         ResolveHostNames = $resolveHostNames
         LogRoot = $logRoot
-        SourceLogRoot = Join-Path -Path $logRoot -ChildPath 'sources'
-        ServerLogRoot = Join-Path -Path $logRoot -ChildPath 'server'
+        SourceLogRoot = $logRoot
+        ServerLogRoot = Get-InternalRuntimeLogRoot
     }
 
+    Resolve-LogLayout -Settings $settings
     $script:LastSettings = $settings.Clone()
     return $settings
 }
@@ -592,9 +680,7 @@ function Get-RunSettings {
 function Resolve-LogPaths {
     param([hashtable] $Settings)
 
-    $Settings.LogRoot = Ensure-Directory -Path $Settings.LogRoot
-    $Settings.SourceLogRoot = Ensure-Directory -Path $Settings.SourceLogRoot
-    $Settings.ServerLogRoot = Ensure-Directory -Path $Settings.ServerLogRoot
+    Resolve-LogLayout -Settings $Settings
 }
 
 function Get-ShortHash {
@@ -737,7 +823,7 @@ function Write-LogRecord {
     }
     else {
         $targetPath = Get-SafeLogPath -Directory $Settings.SourceLogRoot -BaseName ($SourceName + '-current') -Suffix '.log'
-        $archiveRoot = Join-Path -Path $Settings.SourceLogRoot -ChildPath 'archive'
+        $archiveRoot = Join-Path -Path $Settings.LogRoot -ChildPath 'archive'
     }
 
     $line = '{0} [{1}] {2}' -f $timestamp, $Category.ToUpperInvariant(), $Message
@@ -875,8 +961,7 @@ function Resolve-PreferredLogRoot {
 
         if (Test-PathWritable -DirectoryPath $candidate) {
             $Settings.LogRoot = Ensure-Directory -Path $candidate
-            $Settings.SourceLogRoot = Ensure-Directory -Path (Join-Path -Path $Settings.LogRoot -ChildPath 'sources')
-            $Settings.ServerLogRoot = Ensure-Directory -Path (Join-Path -Path $Settings.LogRoot -ChildPath 'server')
+            Resolve-LogLayout -Settings $Settings
             return
         }
     }

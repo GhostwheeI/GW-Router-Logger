@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.1 - 2026-05-16
+
+Startup and log-layout polish release.
+
+### Changed
+
+- Tray startup now pre-checks UDP/TCP port availability and shows a plain-language warning when the selected port is already in use.
+- The chosen log folder is now dedicated to router-received logs instead of being split into `sources` and `server`.
+- Legacy `sources` and `server` log folders are migrated automatically into the new layout.
+- Internal runtime/server logs are now stored outside the selected router log folder.
+
 ## v1.2.0 - 2026-05-16
 
 Updater and installer polish release.
