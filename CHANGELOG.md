@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.3.1 - 2026-05-16
+
+Router log cleanup release.
+
+### Changed
+
+- Router traffic in the selected log folder now goes to one fixed log file: `router-current.log`.
+- Legacy `sources` logs are merged into the single router log during layout migration.
+- Legacy `server` logs are moved into the internal runtime diagnostics area under `C:\ProgramData\GW-Router-Logger\diagnostics\listener-runtime`.
+- Tray self-test no longer recreates `sources` and `server` inside the chosen router log folder.
+
 ## v1.3.0 - 2026-05-16
 
 Single-entrypoint tray integration release.

@@ -25,7 +25,7 @@ catch {
 # These script-scoped values act as the main tuning points for future maintenance.
 # Keeping them together makes it easier to adjust behavior without searching the file.
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.3.0'
+$script:Version = '1.3.1'
 $script:MaxCompressedBytes = 100MB
 $script:ActiveLogRotateBytes = 5MB
 $script:ActiveLogRotateMinutes = 60
@@ -33,6 +33,7 @@ $script:RecentEventsMax = 12
 $script:StatusRefreshMilliseconds = 2000
 $script:DefaultUdpPort = 514
 $script:DefaultTcpPort = 514
+$script:RouterLogBaseName = 'router-current'
 $script:DefaultResolveHostNames = $false
 $script:DnsLookupTimeoutMilliseconds = 250
 $script:SourceNameCacheTtlMinutes = 30
@@ -254,6 +255,40 @@ function Move-DirectoryContents {
     }
 }
 
+function Merge-TextFileIntoPath {
+    param(
+        [Parameter(Mandatory = $true)] [string] $SourcePath,
+        [Parameter(Mandatory = $true)] [string] $DestinationPath
+    )
+
+    if (-not (Test-Path -LiteralPath $SourcePath)) {
+        return
+    }
+
+    if ([IO.Path]::GetFullPath($SourcePath).TrimEnd('\') -eq [IO.Path]::GetFullPath($DestinationPath).TrimEnd('\')) {
+        return
+    }
+
+    $destinationDirectory = Split-Path -Path $DestinationPath -Parent
+    Ensure-Directory -Path $destinationDirectory | Out-Null
+
+    if (-not (Test-Path -LiteralPath $DestinationPath)) {
+        Move-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force -ErrorAction SilentlyContinue
+        return
+    }
+
+    $sourceContent = Get-Content -LiteralPath $SourcePath -Raw -ErrorAction SilentlyContinue
+    if (-not [string]::IsNullOrEmpty($sourceContent)) {
+        $destinationHasContent = ((Get-Item -LiteralPath $DestinationPath -ErrorAction SilentlyContinue).Length -gt 0)
+        if ($destinationHasContent) {
+            Add-Content -LiteralPath $DestinationPath -Value '' -Encoding UTF8
+        }
+        Add-Content -LiteralPath $DestinationPath -Value $sourceContent -Encoding UTF8
+    }
+
+    Remove-Item -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue
+}
+
 function Remove-DirectoryIfEmpty {
     param([string] $Path)
 
@@ -288,7 +323,7 @@ function Resolve-LogLayout {
     if (Test-Path -LiteralPath $legacySourceRoot) {
         $sourceFiles = @(Get-ChildItem -LiteralPath $legacySourceRoot -Force -File -ErrorAction SilentlyContinue)
         foreach ($file in $sourceFiles) {
-            Move-Item -LiteralPath $file.FullName -Destination (Join-Path -Path $Settings.SourceLogRoot -ChildPath $file.Name) -Force -ErrorAction SilentlyContinue
+            Merge-TextFileIntoPath -SourcePath $file.FullName -DestinationPath (Join-Path -Path $Settings.SourceLogRoot -ChildPath ($script:RouterLogBaseName + '.log'))
         }
     }
     if (Test-Path -LiteralPath $legacyServerArchiveRoot) {
@@ -851,7 +886,7 @@ function Write-LogRecord {
         $archiveRoot = Join-Path -Path $Settings.ServerLogRoot -ChildPath 'archive'
     }
     else {
-        $targetPath = Get-SafeLogPath -Directory $Settings.SourceLogRoot -BaseName ($SourceName + '-current') -Suffix '.log'
+        $targetPath = Get-SafeLogPath -Directory $Settings.SourceLogRoot -BaseName $script:RouterLogBaseName -Suffix '.log'
         $archiveRoot = Join-Path -Path $Settings.LogRoot -ChildPath 'archive'
     }
 
