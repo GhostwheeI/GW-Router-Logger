@@ -1,7 +1,9 @@
 param(
     [string] $InstallPath,
     [switch] $DoNotStartAfterInstall,
-    [switch] $ForceReinstall
+    [switch] $ForceReinstall,
+    [switch] $InstallTrayMode,
+    [switch] $SkipTrayPrompt
 )
 
 # Installs GW Router Logger as a normal Windows application entry.
@@ -10,7 +12,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $appName = 'GW Router Logger'
-$version = '1.2.1'
+$version = '1.3.0'
 $publisher = 'Ghostwheel'
 
 function Test-IsAdministrator {
@@ -87,12 +89,20 @@ function New-AppShortcut {
         [string] $ShortcutPath,
         [string] $TargetScript,
         [string] $IconPath,
+        [switch] $TrayApp,
         [switch] $StartListener
     )
 
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Sta -File "{0}"' -f $TargetScript
-    if ($StartListener) {
-        $arguments += ' -StartListener'
+    if ($TrayApp) {
+        $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Sta -File "{0}" -TrayApp' -f $TargetScript
+        if ($StartListener) {
+            $arguments += ' -StartListener'
+        }
+        $description = 'Run GW Router Logger in the notification area'
+    }
+    else {
+        $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $TargetScript
+        $description = 'Run GW Router Logger in the console'
     }
 
     $wsh = New-Object -ComObject WScript.Shell
@@ -100,7 +110,7 @@ function New-AppShortcut {
     $shortcut.TargetPath = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
     $shortcut.Arguments = $arguments
     $shortcut.WorkingDirectory = Split-Path -Parent $TargetScript
-    $shortcut.Description = 'Run GW Router Logger in the notification area'
+    $shortcut.Description = $description
     if (-not [string]::IsNullOrWhiteSpace($IconPath) -and (Test-Path -LiteralPath $IconPath)) {
         $shortcut.IconLocation = $IconPath
     }
@@ -109,6 +119,7 @@ function New-AppShortcut {
 
 $sourceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $isAdmin = Test-IsAdministrator
+$installTrayModeSelected = $InstallTrayMode
 
 if ([string]::IsNullOrWhiteSpace($InstallPath)) {
     if ($isAdmin) {
@@ -137,9 +148,21 @@ if ($existingInstall) {
     Remove-ExistingInstall -InstallInfo $existingInstall
 }
 
+if (-not $SkipTrayPrompt -and -not $PSBoundParameters.ContainsKey('InstallTrayMode')) {
+    Write-Host 'Optional tray mode keeps GW Router Logger in the Windows notification area.'
+    Write-Host 'It gives you the right-click GUI, background listener controls, and startup behavior without leaving a console window open.'
+    $trayChoice = Read-Host 'Install the optional tray mode too? [Y/n]'
+    if ([string]::IsNullOrWhiteSpace($trayChoice) -or $trayChoice.Trim().ToUpperInvariant() -eq 'Y') {
+        $installTrayModeSelected = $true
+    }
+    else {
+        $installTrayModeSelected = $false
+    }
+}
+
 $installRoot = Ensure-Directory -Path $InstallPath
 $files = @(
-    'GW-Router-Logger.Tray.ps1',
+    'GW-Router-Logger.TrayMode.psm1',
     'GW-Router-Logger.ps1',
     'Uninstall-GWRouterLogger.ps1',
     'README.md',
@@ -163,11 +186,22 @@ if (Test-Path -LiteralPath $sourceAssets) {
 $programs = [Environment]::GetFolderPath('Programs')
 $shortcutFolder = Ensure-Directory -Path (Join-Path -Path $programs -ChildPath 'GW Router Logger')
 $desktopPath = [Environment]::GetFolderPath('Desktop')
-$trayScript = Join-Path -Path $installRoot -ChildPath 'GW-Router-Logger.Tray.ps1'
+$launcherScript = Join-Path -Path $installRoot -ChildPath 'GW-Router-Logger.ps1'
 $iconPath = Join-Path -Path (Join-Path -Path $installRoot -ChildPath 'assets') -ChildPath 'gw-router-logger.ico'
-New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $trayScript -IconPath $iconPath
-New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger - Start Listener.lnk') -TargetScript $trayScript -IconPath $iconPath -StartListener
-New-AppShortcut -ShortcutPath (Join-Path -Path $desktopPath -ChildPath 'GW Router Logger.lnk') -TargetScript $trayScript -IconPath $iconPath
+
+if ($installTrayModeSelected) {
+    New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath -TrayApp
+    New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger - Start Listener.lnk') -TargetScript $launcherScript -IconPath $iconPath -TrayApp -StartListener
+    New-AppShortcut -ShortcutPath (Join-Path -Path $desktopPath -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath -TrayApp
+}
+else {
+    $trayShortcut = Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger - Start Listener.lnk'
+    if (Test-Path -LiteralPath $trayShortcut) {
+        Remove-Item -LiteralPath $trayShortcut -Force -ErrorAction SilentlyContinue
+    }
+    New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath
+    New-AppShortcut -ShortcutPath (Join-Path -Path $desktopPath -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath
+}
 
 $uninstallScript = Join-Path -Path $installRoot -ChildPath 'Uninstall-GWRouterLogger.ps1'
 $uninstallCommand = '"{0}" -NoProfile -ExecutionPolicy Bypass -File "{1}"' -f "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe", $uninstallScript
@@ -197,14 +231,20 @@ New-ItemProperty -Path $uninstallRoot -Name NoRepair -Value 1 -PropertyType DWor
 
 Write-Host ("Installed {0} v{1} to {2}" -f $appName, $version, $installRoot)
 Write-Host 'The app is now registered in Apps and Features.'
-Write-Host ('Created shortcuts in Start Menu and on Desktop.')
+if ($installTrayModeSelected) {
+    Write-Host 'Created tray shortcuts in Start Menu and on Desktop.'
+}
+else {
+    Write-Host 'Created console shortcuts in Start Menu and on Desktop.'
+}
 
-if (-not $DoNotStartAfterInstall) {
+if ($installTrayModeSelected -and -not $DoNotStartAfterInstall) {
     Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList @(
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
         '-WindowStyle', 'Hidden',
         '-Sta',
-        '-File', ('"{0}"' -f $trayScript)
+        '-File', ('"{0}"' -f $launcherScript),
+        '-TrayApp'
     ) -WindowStyle Hidden
 }

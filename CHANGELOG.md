@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.3.0 - 2026-05-16
+
+Single-entrypoint tray integration release.
+
+### Added
+
+- Optional tray-mode install prompt in `Install-GWRouterLogger.ps1` with a short explanation of what the tray mode provides.
+- Internal tray support module loaded through `GW-Router-Logger.ps1 -TrayApp` instead of a second user-facing script entry.
+
+### Changed
+
+- The main script is now the only launch target for installed shortcuts.
+- Tray self-updates now reinstall tray mode without re-prompting during the handoff.
+- Installer-created shortcuts now point either to console mode or tray mode depending on the selected install option.
+- Uninstall cleanup now stops tray instances launched through `GW-Router-Logger.ps1 -TrayApp`.
+
 ## v1.2.1 - 2026-05-16
 
 Startup and log-layout polish release.

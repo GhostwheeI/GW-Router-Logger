@@ -2,7 +2,7 @@
 
 `GW Router Logger` is a PowerShell syslog collector for Windows, designed for home labs, residential routers, and small-network troubleshooting.
 
-Current release: `v1.2.1`
+Current release: `v1.3.0`
 
 It focuses on the things that usually break first on normal Windows machines: elevation, pathing, firewall access, bind-address selection, log rollover, and clear on-screen status.
 
@@ -43,7 +43,7 @@ This script does the opposite. It guides setup, validates inputs, uses practical
 
 ## Quick Start
 
-### Tray app
+### Install
 
 1. Run PowerShell.
 2. Change into the script folder.
@@ -53,10 +53,13 @@ This script does the opposite. It guides setup, validates inputs, uses practical
 .\Install-GWRouterLogger.ps1
 ```
 
-4. The installer creates Start Menu and Desktop shortcuts and starts the tray app automatically.
-5. Right-click the tray icon and choose **Configure**.
+4. The installer asks whether you want the optional tray mode.
+5. If you choose tray mode, the installer creates Start Menu and Desktop shortcuts and starts the tray icon automatically.
+6. Right-click the tray icon and choose **Configure**.
 
 If the installer detects an existing installation, it asks whether to reinstall before making changes.
+
+Tray mode is launched through `GW-Router-Logger.ps1 -TrayApp`. The tray support code is installed internally, but there is only one user-facing app script.
 
 The tray menu shows the app name and version, live status, listener controls, log shortcuts, update checking, settings, about, and exit. The listener can be started or stopped from the right-click menu.
 
@@ -90,9 +93,6 @@ By default, the script:
 GW-ROUTER-LOGS
 ```
 
-- writes:
-  - per-source logs under `sources`
-  - server/runtime logs under `server`
 - rotates active logs by size or age
 - compresses rotated logs
 - prunes old compressed archives until retained compressed logs are at or below the configured cap
@@ -119,7 +119,7 @@ GW-ROUTER-LOGS\
 
 ## Runtime controls
 
-Tray app controls are primarily in the right-click menu:
+If tray mode is installed, its controls are primarily in the right-click menu:
 
 - `Configure` sets listener IP, UDP/TCP ports, hostname lookup, and log folder
 - `Start` and `Stop` control the listener

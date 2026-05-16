@@ -1,3 +1,14 @@
+param(
+    [switch] $TrayApp,
+    [switch] $FirewallOnly,
+    [switch] $SelfTest,
+    [switch] $ListenerSelfTest,
+    [switch] $UpdateCheckSelfTest,
+    [switch] $StartListener,
+    [int] $FirewallUdpPort = 514,
+    [int] $FirewallTcpPort = 0
+)
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
 
@@ -14,7 +25,7 @@ catch {
 # These script-scoped values act as the main tuning points for future maintenance.
 # Keeping them together makes it easier to adjust behavior without searching the file.
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.2.1'
+$script:Version = '1.3.0'
 $script:MaxCompressedBytes = 100MB
 $script:ActiveLogRotateBytes = 5MB
 $script:ActiveLogRotateMinutes = 60
@@ -28,6 +39,24 @@ $script:SourceNameCacheTtlMinutes = 30
 $script:TcpClientIdleTimeoutMinutes = 15
 $script:LastSettings = $null
 $script:SourceNameCache = @{}
+
+if ($TrayApp -or $FirewallOnly -or $SelfTest -or $ListenerSelfTest -or $UpdateCheckSelfTest -or $StartListener) {
+    $trayModulePath = Join-Path -Path (Split-Path -Path $PSCommandPath -Parent) -ChildPath 'GW-Router-Logger.TrayMode.psm1'
+    if (-not (Test-Path -LiteralPath $trayModulePath)) {
+        throw "Tray support module is missing: $trayModulePath"
+    }
+
+    Import-Module -Name $trayModulePath -Force -DisableNameChecking
+    Start-GWRouterLoggerTrayApp `
+        -FirewallOnly:$FirewallOnly `
+        -SelfTest:$SelfTest `
+        -ListenerSelfTest:$ListenerSelfTest `
+        -UpdateCheckSelfTest:$UpdateCheckSelfTest `
+        -StartListener:$StartListener `
+        -FirewallUdpPort $FirewallUdpPort `
+        -FirewallTcpPort $FirewallTcpPort
+    return
+}
 
 function Write-Rule {
     param(

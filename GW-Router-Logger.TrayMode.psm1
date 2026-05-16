@@ -1,19 +1,9 @@
-param(
-    [switch] $FirewallOnly,
-    [switch] $SelfTest,
-    [switch] $ListenerSelfTest,
-    [switch] $UpdateCheckSelfTest,
-    [switch] $StartListener,
-    [int] $FirewallUdpPort = 514,
-    [int] $FirewallTcpPort = 0
-)
-
-# GW Router Logger tray application.
-# This file keeps the listener usable without a console window and leaves the
-# original CLI script intact for users who prefer the menu-driven terminal flow.
+# GW Router Logger tray support module.
+# This keeps tray behavior behind the main GW-Router-Logger.ps1 entrypoint so
+# installs only expose one app script to the user.
 
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.2.1'
+$script:Version = '1.3.0'
 $script:Publisher = 'Ghostwheel'
 $script:GitHubOwner = 'GhostwheeI'
 $script:GitHubRepo = 'GW-Router-Logger'
@@ -65,6 +55,10 @@ function Get-ScriptRootPath {
         return $PSScriptRoot
     }
     return Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+
+function Get-LauncherScriptPath {
+    return Join-Path -Path (Get-ScriptRootPath) -ChildPath 'GW-Router-Logger.ps1'
 }
 
 function Get-AppDataRoot {
@@ -285,7 +279,9 @@ try {
         '-ExecutionPolicy', 'Bypass',
         '-File', `$installerPath,
         '-InstallPath', `$InstallRoot,
-        '-ForceReinstall'
+        '-ForceReinstall',
+        '-InstallTrayMode',
+        '-SkipTrayPrompt'
     )
 
     if ((Test-IsProtectedInstallPath -Path `$InstallRoot) -and -not (Test-IsAdministrator)) {
@@ -507,7 +503,7 @@ function Sync-StartupShortcut {
         $wsh = New-Object -ComObject WScript.Shell
         $shortcut = $wsh.CreateShortcut($shortcutPath)
         $shortcut.TargetPath = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
-        $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Sta -File "{0}"' -f $PSCommandPath
+        $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Sta -File "{0}" -TrayApp' -f (Get-LauncherScriptPath)
         $shortcut.WorkingDirectory = Get-ScriptRootPath
         $shortcut.Description = 'Start GW Router Logger in the notification area'
         $iconPath = Get-AppIconPath
@@ -900,7 +896,7 @@ function Add-FirewallRulesForConfig {
         $args = @(
             '-NoProfile',
             '-ExecutionPolicy', 'Bypass',
-            '-File', ('"{0}"' -f $PSCommandPath),
+            '-File', ('"{0}"' -f (Get-LauncherScriptPath)),
             '-FirewallOnly',
             '-FirewallUdpPort', ([string] $(if ([bool] $Config.UdpEnabled) { [int] $Config.UdpPort } else { 0 })),
             '-FirewallTcpPort', ([string] $(if ([bool] $Config.TcpEnabled) { [int] $Config.TcpPort } else { 0 }))
@@ -2038,75 +2034,89 @@ function Invoke-UpdateCheckSelfTest {
     'UPDATE_CHECK_OK {0} {1}' -f $releaseInfo.Version, $releaseInfo.AssetName
 }
 
-if ($FirewallOnly) {
-    Invoke-FirewallOnlyMode
-    exit 0
-}
-
-if ($SelfTest) {
-    Invoke-SelfTest
-    exit 0
-}
-
-if ($ListenerSelfTest) {
-    Invoke-ListenerSelfTest
-    exit 0
-}
-
-if ($UpdateCheckSelfTest) {
-    Invoke-UpdateCheckSelfTest
-    exit 0
-}
-
-$createdNew = $false
-$mutex = New-Object System.Threading.Mutex($true, 'Global\GW-Router-Logger-Tray', [ref] $createdNew)
-if (-not $createdNew) {
-    [void] [System.Windows.Forms.MessageBox]::Show(
-        'GW Router Logger is already running.',
-        $script:AppName,
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Information
+function Start-GWRouterLoggerTrayApp {
+    param(
+        [switch] $FirewallOnly,
+        [switch] $SelfTest,
+        [switch] $ListenerSelfTest,
+        [switch] $UpdateCheckSelfTest,
+        [switch] $StartListener,
+        [int] $FirewallUdpPort = 514,
+        [int] $FirewallTcpPort = 0
     )
-    exit 0
+
+    if ($FirewallOnly) {
+        Invoke-FirewallOnlyMode
+        return
+    }
+
+    if ($SelfTest) {
+        Invoke-SelfTest
+        return
+    }
+
+    if ($ListenerSelfTest) {
+        Invoke-ListenerSelfTest
+        return
+    }
+
+    if ($UpdateCheckSelfTest) {
+        Invoke-UpdateCheckSelfTest
+        return
+    }
+
+    $createdNew = $false
+    $mutex = New-Object System.Threading.Mutex($true, 'Global\GW-Router-Logger-Tray', [ref] $createdNew)
+    if (-not $createdNew) {
+        [void] [System.Windows.Forms.MessageBox]::Show(
+            'GW Router Logger is already running.',
+            $script:AppName,
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        )
+        return
+    }
+
+    try {
+        [System.Windows.Forms.Application]::EnableVisualStyles()
+        [System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
+        Get-AppConfig | Out-Null
+
+        Build-ContextMenu
+        $script:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
+        $script:NotifyIcon.Icon = Get-AppIcon
+        $script:NotifyIcon.Text = $script:AppName
+        $script:NotifyIcon.ContextMenuStrip = $script:ContextMenu
+        $script:NotifyIcon.Visible = $true
+
+        $script:UiTimer = New-Object System.Windows.Forms.Timer
+        $script:UiTimer.Interval = 1000
+        $script:UiTimer.Add_Tick({ Update-MenuState })
+        $script:UiTimer.Start()
+
+        Update-MenuState
+        Write-AppLog -Message ('Tray startup reached. StartListener={0}' -f [bool] $StartListener)
+        if ($StartListener) {
+            Start-Listener
+        }
+        Write-AppLog -Message 'Tray application started.' -Diagnostic
+        [System.Windows.Forms.Application]::Run()
+    }
+    finally {
+        Stop-Listener
+        if ($script:UiTimer) {
+            $script:UiTimer.Stop()
+            $script:UiTimer.Dispose()
+        }
+        if ($script:NotifyIcon) {
+            $script:NotifyIcon.Visible = $false
+            $script:NotifyIcon.Dispose()
+        }
+        if ($mutex) {
+            $mutex.ReleaseMutex()
+            $mutex.Dispose()
+        }
+    }
 }
 
-try {
-    [System.Windows.Forms.Application]::EnableVisualStyles()
-    [System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
-    Get-AppConfig | Out-Null
-
-    Build-ContextMenu
-    $script:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
-    $script:NotifyIcon.Icon = Get-AppIcon
-    $script:NotifyIcon.Text = $script:AppName
-    $script:NotifyIcon.ContextMenuStrip = $script:ContextMenu
-    $script:NotifyIcon.Visible = $true
-
-    $script:UiTimer = New-Object System.Windows.Forms.Timer
-    $script:UiTimer.Interval = 1000
-    $script:UiTimer.Add_Tick({ Update-MenuState })
-    $script:UiTimer.Start()
-
-    Update-MenuState
-    Write-AppLog -Message ('Tray startup reached. StartListener={0}' -f [bool] $StartListener)
-    if ($StartListener) {
-        Start-Listener
-    }
-    Write-AppLog -Message 'Tray application started.' -Diagnostic
-    [System.Windows.Forms.Application]::Run()
-}
-finally {
-    Stop-Listener
-    if ($script:UiTimer) {
-        $script:UiTimer.Stop()
-        $script:UiTimer.Dispose()
-    }
-    if ($script:NotifyIcon) {
-        $script:NotifyIcon.Visible = $false
-        $script:NotifyIcon.Dispose()
-    }
-    if ($mutex) {
-        $mutex.ReleaseMutex()
-        $mutex.Dispose()
-    }
-}
+Export-ModuleMember -Function Start-GWRouterLoggerTrayApp

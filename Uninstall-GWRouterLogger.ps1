@@ -54,8 +54,11 @@ function Stop-RunningTray {
     $processes = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction SilentlyContinue |
         Where-Object {
             $_.ProcessId -ne $PID -and
-            $_.CommandLine -match 'GW-Router-Logger\.Tray\.ps1' -and
-            $_.CommandLine -match [regex]::Escape($InstallPath)
+            $_.CommandLine -match [regex]::Escape($InstallPath) -and
+            (
+                $_.CommandLine -match 'GW-Router-Logger\.Tray\.ps1' -or
+                ($_.CommandLine -match 'GW-Router-Logger\.ps1' -and $_.CommandLine -match '(^|\\s)-TrayApp(\\s|$)')
+            )
         }
 
     foreach ($process in $processes) {
