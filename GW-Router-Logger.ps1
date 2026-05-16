@@ -12,6 +12,26 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
 
+function Get-AppVersionValue {
+    $versionFilePath = $null
+
+    if ($PSCommandPath) {
+        $versionFilePath = Join-Path -Path (Split-Path -Path $PSCommandPath -Parent) -ChildPath 'VERSION'
+    }
+    elseif ($PSScriptRoot) {
+        $versionFilePath = Join-Path -Path $PSScriptRoot -ChildPath 'VERSION'
+    }
+
+    if ($versionFilePath -and (Test-Path -LiteralPath $versionFilePath)) {
+        $value = (Get-Content -LiteralPath $versionFilePath -Raw -ErrorAction SilentlyContinue).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+    }
+
+    return '1.3.3'
+}
+
 # GW Router Logger
 # This script is intentionally organized as small functions so that later features can be
 # added without rewriting the listener loop, menu flow, or log retention logic.
@@ -25,7 +45,7 @@ catch {
 # These script-scoped values act as the main tuning points for future maintenance.
 # Keeping them together makes it easier to adjust behavior without searching the file.
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.3.2'
+$script:Version = Get-AppVersionValue
 $script:MaxCompressedBytes = 100MB
 $script:ActiveLogRotateBytes = 5MB
 $script:ActiveLogRotateMinutes = 60

@@ -12,8 +12,21 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $appName = 'GW Router Logger'
-$version = '1.3.2'
 $publisher = 'Ghostwheel'
+
+function Get-AppVersionValue {
+    $versionFilePath = Join-Path -Path (Split-Path -Parent $MyInvocation.MyCommand.Path) -ChildPath 'VERSION'
+    if (Test-Path -LiteralPath $versionFilePath) {
+        $value = (Get-Content -LiteralPath $versionFilePath -Raw -ErrorAction SilentlyContinue).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+    }
+
+    return '1.3.3'
+}
+
+$version = Get-AppVersionValue
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -165,6 +178,7 @@ $files = @(
     'GW-Router-Logger.TrayMode.psm1',
     'GW-Router-Logger.ps1',
     'Uninstall-GWRouterLogger.ps1',
+    'VERSION',
     'README.md',
     'CHANGELOG.md',
     'LICENSE'

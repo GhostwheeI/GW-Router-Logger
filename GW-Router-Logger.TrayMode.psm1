@@ -2,8 +2,20 @@
 # This keeps tray behavior behind the main GW-Router-Logger.ps1 entrypoint so
 # installs only expose one app script to the user.
 
+function Get-AppVersionValue {
+    $versionFilePath = Join-Path -Path $PSScriptRoot -ChildPath 'VERSION'
+    if (Test-Path -LiteralPath $versionFilePath) {
+        $value = (Get-Content -LiteralPath $versionFilePath -Raw -ErrorAction SilentlyContinue).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+    }
+
+    return '1.3.3'
+}
+
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.3.2'
+$script:Version = Get-AppVersionValue
 $script:Publisher = 'Ghostwheel'
 $script:GitHubOwner = 'GhostwheeI'
 $script:GitHubRepo = 'GW-Router-Logger'

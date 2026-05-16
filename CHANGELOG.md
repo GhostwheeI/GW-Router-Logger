@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.3 - 2026-05-16
+
+Version source-of-truth release.
+
+### Changed
+
+- The app, tray module, and installer now read the version from a single tracked `VERSION` file instead of keeping separate hardcoded version strings.
+- Apps and Features registration now uses that same shared version value.
+- Install packages now include the `VERSION` file so installed copies report the expected current version after updating.
+
 ## v1.3.2 - 2026-05-16
 
 Updater restart reliability release.
