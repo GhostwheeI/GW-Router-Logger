@@ -80,6 +80,11 @@ if (Test-Path -LiteralPath $startupShortcut) {
     Remove-Item -LiteralPath $startupShortcut -Force -ErrorAction SilentlyContinue
 }
 
+$desktopShortcut = Join-Path -Path ([Environment]::GetFolderPath('Desktop')) -ChildPath 'GW Router Logger.lnk'
+if (Test-Path -LiteralPath $desktopShortcut) {
+    Remove-Item -LiteralPath $desktopShortcut -Force -ErrorAction SilentlyContinue
+}
+
 foreach ($registryName in $registryNames) {
     if (Test-Path -LiteralPath $registryName) {
         Remove-Item -LiteralPath $registryName -Recurse -Force -ErrorAction SilentlyContinue

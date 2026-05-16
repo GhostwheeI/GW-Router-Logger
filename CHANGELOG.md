@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.2.0 - 2026-05-16
+
+Updater and installer polish release.
+
+### Added
+
+- `Check for Updates ...` tray-menu action in its own section above Settings.
+- GitHub release check against `GhostwheeI/GW-Router-Logger` with packaged zip asset detection.
+- Helper-driven self-update handoff that closes the running tray app, downloads the approved release, and reinstalls it.
+- Desktop launch shortcut created during install.
+
+### Changed
+
+- Installer now starts the tray app automatically after install by default.
+- Installer now prompts for reinstall when an existing installation is detected, with `-ForceReinstall` available for scripted use.
+- Uninstaller now removes the Desktop shortcut as part of cleanup.
+
 ## v1.1.1 - 2026-05-06
 
 Icon polish release.

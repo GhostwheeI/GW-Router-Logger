@@ -1,6 +1,7 @@
 param(
     [string] $InstallPath,
-    [switch] $StartAfterInstall
+    [switch] $DoNotStartAfterInstall,
+    [switch] $ForceReinstall
 )
 
 # Installs GW Router Logger as a normal Windows application entry.
@@ -9,7 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $appName = 'GW Router Logger'
-$version = '1.1.1'
+$version = '1.2.0'
 $publisher = 'Ghostwheel'
 
 function Test-IsAdministrator {
@@ -24,6 +25,61 @@ function Ensure-Directory {
         [void] (New-Item -Path $Path -ItemType Directory -Force)
     }
     return (Resolve-Path -LiteralPath $Path).Path
+}
+
+function Get-ExistingInstallInfo {
+    param([string] $RequestedInstallPath)
+
+    $registryNames = @(
+        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\GWRouterLogger',
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\GWRouterLogger'
+    )
+
+    $requestedFullPath = ''
+    if (-not [string]::IsNullOrWhiteSpace($RequestedInstallPath)) {
+        $requestedFullPath = [IO.Path]::GetFullPath($RequestedInstallPath).TrimEnd('\')
+    }
+
+    foreach ($registryName in $registryNames) {
+        if (-not (Test-Path -LiteralPath $registryName)) {
+            continue
+        }
+
+        try {
+            $installLocation = Get-ItemPropertyValue -Path $registryName -Name InstallLocation -ErrorAction Stop
+            if (-not [string]::IsNullOrWhiteSpace($installLocation)) {
+                return @{
+                    RegistryPath = $registryName
+                    InstallLocation = [IO.Path]::GetFullPath($installLocation).TrimEnd('\')
+                    Source = 'registry'
+                }
+            }
+        }
+        catch {}
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($requestedFullPath) -and (Test-Path -LiteralPath $requestedFullPath)) {
+        return @{
+            RegistryPath = ''
+            InstallLocation = $requestedFullPath
+            Source = 'folder'
+        }
+    }
+
+    return $null
+}
+
+function Remove-ExistingInstall {
+    param([hashtable] $InstallInfo)
+
+    $existingInstallPath = $InstallInfo.InstallLocation
+    $uninstallScript = Join-Path -Path $existingInstallPath -ChildPath 'Uninstall-GWRouterLogger.ps1'
+    if (Test-Path -LiteralPath $uninstallScript) {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $uninstallScript -Quiet
+        return
+    }
+
+    throw "Existing installation found at $existingInstallPath but the uninstaller script is missing."
 }
 
 function New-AppShortcut {
@@ -63,6 +119,24 @@ if ([string]::IsNullOrWhiteSpace($InstallPath)) {
     }
 }
 
+if (-not [string]::IsNullOrWhiteSpace($InstallPath)) {
+    $InstallPath = [IO.Path]::GetFullPath($InstallPath).TrimEnd('\')
+}
+
+$existingInstall = Get-ExistingInstallInfo -RequestedInstallPath $InstallPath
+if ($existingInstall) {
+    if (-not $ForceReinstall) {
+        $prompt = 'An installation is already present at {0}. Reinstall now? [y/N]' -f $existingInstall.InstallLocation
+        $choice = Read-Host $prompt
+        if ([string]::IsNullOrWhiteSpace($choice) -or $choice.Trim().ToUpperInvariant() -ne 'Y') {
+            Write-Host 'Installation cancelled.'
+            exit 0
+        }
+    }
+
+    Remove-ExistingInstall -InstallInfo $existingInstall
+}
+
 $installRoot = Ensure-Directory -Path $InstallPath
 $files = @(
     'GW-Router-Logger.Tray.ps1',
@@ -88,10 +162,12 @@ if (Test-Path -LiteralPath $sourceAssets) {
 
 $programs = [Environment]::GetFolderPath('Programs')
 $shortcutFolder = Ensure-Directory -Path (Join-Path -Path $programs -ChildPath 'GW Router Logger')
+$desktopPath = [Environment]::GetFolderPath('Desktop')
 $trayScript = Join-Path -Path $installRoot -ChildPath 'GW-Router-Logger.Tray.ps1'
 $iconPath = Join-Path -Path (Join-Path -Path $installRoot -ChildPath 'assets') -ChildPath 'gw-router-logger.ico'
 New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $trayScript -IconPath $iconPath
 New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger - Start Listener.lnk') -TargetScript $trayScript -IconPath $iconPath -StartListener
+New-AppShortcut -ShortcutPath (Join-Path -Path $desktopPath -ChildPath 'GW Router Logger.lnk') -TargetScript $trayScript -IconPath $iconPath
 
 $uninstallScript = Join-Path -Path $installRoot -ChildPath 'Uninstall-GWRouterLogger.ps1'
 $uninstallCommand = '"{0}" -NoProfile -ExecutionPolicy Bypass -File "{1}"' -f "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe", $uninstallScript
@@ -121,8 +197,9 @@ New-ItemProperty -Path $uninstallRoot -Name NoRepair -Value 1 -PropertyType DWor
 
 Write-Host ("Installed {0} v{1} to {2}" -f $appName, $version, $installRoot)
 Write-Host 'The app is now registered in Apps and Features.'
+Write-Host ('Created shortcuts in Start Menu and on Desktop.')
 
-if ($StartAfterInstall) {
+if (-not $DoNotStartAfterInstall) {
     Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList @(
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',

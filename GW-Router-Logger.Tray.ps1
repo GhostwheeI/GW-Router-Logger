@@ -2,6 +2,7 @@ param(
     [switch] $FirewallOnly,
     [switch] $SelfTest,
     [switch] $ListenerSelfTest,
+    [switch] $UpdateCheckSelfTest,
     [switch] $StartListener,
     [int] $FirewallUdpPort = 514,
     [int] $FirewallTcpPort = 0
@@ -12,8 +13,10 @@ param(
 # original CLI script intact for users who prefer the menu-driven terminal flow.
 
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.1.1'
+$script:Version = '1.2.0'
 $script:Publisher = 'Ghostwheel'
+$script:GitHubOwner = 'GhostwheeI'
+$script:GitHubRepo = 'GW-Router-Logger'
 $script:DefaultUdpPort = 514
 $script:DefaultTcpPort = 514
 $script:DefaultTcpEnabled = $false
@@ -120,6 +123,210 @@ function Get-AppIcon {
     }
 
     return [System.Drawing.SystemIcons]::Application
+}
+
+function Get-GitHubLatestReleaseApiUrl {
+    return 'https://api.github.com/repos/{0}/{1}/releases/latest' -f $script:GitHubOwner, $script:GitHubRepo
+}
+
+function Get-NormalizedVersionString {
+    param([string] $VersionText)
+
+    if ([string]::IsNullOrWhiteSpace($VersionText)) {
+        return '0.0.0'
+    }
+
+    return $VersionText.Trim().TrimStart('v', 'V')
+}
+
+function ConvertTo-VersionObject {
+    param([string] $VersionText)
+
+    $normalized = Get-NormalizedVersionString -VersionText $VersionText
+    $parts = $normalized.Split('.')
+    while ($parts.Count -lt 4) {
+        $parts += '0'
+    }
+    return [version] ($parts -join '.')
+}
+
+function Test-IsProtectedInstallPath {
+    param([string] $InstallPath)
+
+    if ([string]::IsNullOrWhiteSpace($InstallPath)) {
+        return $false
+    }
+
+    $fullPath = [IO.Path]::GetFullPath($InstallPath).TrimEnd('\')
+    $protectedRoots = @(
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)}
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    foreach ($root in $protectedRoots) {
+        $rootFull = [IO.Path]::GetFullPath($root).TrimEnd('\')
+        if ($fullPath.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-LatestReleaseInfo {
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    }
+    catch {}
+
+    $headers = @{
+        'User-Agent' = '{0}/{1}' -f $script:AppName, $script:Version
+        'Accept' = 'application/vnd.github+json'
+    }
+
+    $release = Invoke-RestMethod -Uri (Get-GitHubLatestReleaseApiUrl) -Headers $headers -ErrorAction Stop
+    $asset = $null
+    foreach ($candidate in @($release.assets)) {
+        if ($candidate.name -match '^GW-Router-Logger-v.*\.zip$') {
+            $asset = $candidate
+            break
+        }
+    }
+
+    if (-not $asset) {
+        throw 'The latest GitHub release did not include the packaged zip asset.'
+    }
+
+    $assetUrl = $asset.browser_download_url
+    if ([string]::IsNullOrWhiteSpace($assetUrl)) {
+        $assetUrl = $asset.url
+    }
+
+    return @{
+        TagName = [string] $release.tag_name
+        Name = [string] $release.name
+        PublishedAt = [string] $release.published_at
+        Version = Get-NormalizedVersionString -VersionText ([string] $release.tag_name)
+        AssetName = [string] $asset.name
+        AssetUrl = [string] $assetUrl
+    }
+}
+
+function Start-UpdateInstallerProcess {
+    param([hashtable] $ReleaseInfo)
+
+    $installRoot = Get-ScriptRootPath
+    $helperPath = Join-Path -Path $env:TEMP -ChildPath ('GWRouterLogger-Update-{0}.ps1' -f ([guid]::NewGuid().ToString('N')))
+    $helperPathLiteral = $helperPath.Replace("'", "''")
+    $helperContent = @'
+param(
+    [int] `$CurrentPid,
+    [string] `$InstallRoot,
+    [string] `$AssetUrl,
+    [string] `$ExpectedVersion
+)
+
+`$ErrorActionPreference = 'Stop'
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+}
+catch {}
+
+function Test-IsAdministrator {
+    `$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    `$principal = New-Object Security.Principal.WindowsPrincipal(`$identity)
+    return `$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Test-IsProtectedInstallPath {
+    param([string] `$Path)
+    if ([string]::IsNullOrWhiteSpace(`$Path)) {
+        return `$false
+    }
+    `$fullPath = [IO.Path]::GetFullPath(`$Path).TrimEnd('\')
+    `$roots = @(`$env:ProgramFiles, `${env:ProgramFiles(x86)}) | Where-Object { -not [string]::IsNullOrWhiteSpace(`$_) }
+    foreach (`$root in `$roots) {
+        `$rootFull = [IO.Path]::GetFullPath(`$root).TrimEnd('\')
+        if (`$fullPath.StartsWith(`$rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return `$true
+        }
+    }
+    return `$false
+}
+
+for (`$attempt = 0; `$attempt -lt 120; `$attempt++) {
+    try {
+        if (-not (Get-Process -Id `$CurrentPid -ErrorAction SilentlyContinue)) {
+            break
+        }
+    }
+    catch {}
+    Start-Sleep -Milliseconds 500
+}
+
+`$tempRoot = Join-Path -Path `$env:TEMP -ChildPath ('GWRouterLogger-Update-' + [guid]::NewGuid().ToString('N'))
+`$zipPath = Join-Path -Path `$tempRoot -ChildPath 'update.zip'
+New-Item -Path `$tempRoot -ItemType Directory -Force | Out-Null
+
+try {
+    Invoke-WebRequest -Uri `$AssetUrl -OutFile `$zipPath -UseBasicParsing -ErrorAction Stop
+    Expand-Archive -LiteralPath `$zipPath -DestinationPath `$tempRoot -Force
+    `$installerPath = Join-Path -Path `$tempRoot -ChildPath 'Install-GWRouterLogger.ps1'
+    if (-not (Test-Path -LiteralPath `$installerPath)) {
+        throw 'The update package did not contain Install-GWRouterLogger.ps1.'
+    }
+
+    `$arguments = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', `$installerPath,
+        '-InstallPath', `$InstallRoot,
+        '-ForceReinstall'
+    )
+
+    if ((Test-IsProtectedInstallPath -Path `$InstallRoot) -and -not (Test-IsAdministrator)) {
+        `$process = Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList `$arguments -Verb RunAs -Wait -PassThru
+    }
+    else {
+        `$process = Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList `$arguments -Wait -PassThru
+    }
+
+    if (`$process.ExitCode -ne 0) {
+        throw ('Installer exited with code {0}.' -f `$process.ExitCode)
+    }
+}
+catch {
+    Add-Type -AssemblyName System.Windows.Forms
+    [void] [System.Windows.Forms.MessageBox]::Show(
+        ('Update to version {0} failed: {1}' -f `$ExpectedVersion, `$_.Exception.Message),
+        'GW Router Logger',
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Error
+    )
+}
+finally {
+    if (Test-Path -LiteralPath `$tempRoot) {
+        Remove-Item -LiteralPath `$tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath '__HELPER_PATH__') {
+        Remove-Item -LiteralPath '__HELPER_PATH__' -Force -ErrorAction SilentlyContinue
+    }
+}
+'@
+    $helperContent = $helperContent.Replace('__HELPER_PATH__', $helperPathLiteral)
+
+    Set-Content -LiteralPath $helperPath -Value $helperContent -Encoding UTF8
+    $arguments = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden',
+        '-File', $helperPath,
+        '-CurrentPid', [string] $PID,
+        '-InstallRoot', $installRoot,
+        '-AssetUrl', $ReleaseInfo.AssetUrl,
+        '-ExpectedVersion', $ReleaseInfo.Version
+    )
+    Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $arguments -WindowStyle Hidden | Out-Null
 }
 
 function Rotate-AppLog {
@@ -1105,6 +1312,68 @@ function Stop-Listener {
     Update-MenuState
 }
 
+function Exit-App {
+    Stop-Listener
+    if ($script:UiTimer) {
+        $script:UiTimer.Stop()
+    }
+    if ($script:NotifyIcon) {
+        $script:NotifyIcon.Visible = $false
+        $script:NotifyIcon.Dispose()
+    }
+    [System.Windows.Forms.Application]::Exit()
+}
+
+function Invoke-CheckForUpdates {
+    try {
+        Write-AppLog -Message 'Checking GitHub for updates.' -Diagnostic
+        $releaseInfo = Get-LatestReleaseInfo
+        $currentVersion = ConvertTo-VersionObject -VersionText $script:Version
+        $latestVersion = ConvertTo-VersionObject -VersionText $releaseInfo.Version
+        if ($latestVersion -le $currentVersion) {
+            [void] [System.Windows.Forms.MessageBox]::Show(
+                ('You are already on the latest version ({0}).' -f $script:Version),
+                $script:AppName,
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            )
+            return
+        }
+
+        $message = @"
+A newer version is available.
+
+Current version: $script:Version
+Latest version: $($releaseInfo.Version)
+Published: $($releaseInfo.PublishedAt)
+
+Download and install the update now?
+"@
+        $choice = [System.Windows.Forms.MessageBox]::Show(
+            $message,
+            $script:AppName,
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question
+        )
+        if ($choice -ne [System.Windows.Forms.DialogResult]::Yes) {
+            return
+        }
+
+        Write-AppLog -Message ('Starting update install for version {0}.' -f $releaseInfo.Version)
+        Start-UpdateInstallerProcess -ReleaseInfo $releaseInfo
+        Exit-App
+    }
+    catch {
+        Write-AppLog -Message ('Update check failed: {0}' -f $_.Exception.Message)
+        [void] [System.Windows.Forms.MessageBox]::Show(
+            ('Update check failed: {0}' -f $_.Exception.Message),
+            $script:AppName,
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+    }
+}
+
 function Show-AboutForm {
     $config = Get-AppConfig
     $text = @"
@@ -1501,6 +1770,10 @@ function Build-ContextMenu {
     $script:OpenFolderItem.Text = 'Open Log Folder'
     $script:OpenFolderItem.Add_Click({ Open-LogFolder })
 
+    $updateItem = New-Object System.Windows.Forms.ToolStripMenuItem
+    $updateItem.Text = 'Check for Updates ...'
+    $updateItem.Add_Click({ Invoke-CheckForUpdates })
+
     $settings = New-Object System.Windows.Forms.ToolStripMenuItem
     $settings.Text = 'Settings'
     $settings.Add_Click({ Show-SettingsForm })
@@ -1511,17 +1784,7 @@ function Build-ContextMenu {
 
     $exit = New-Object System.Windows.Forms.ToolStripMenuItem
     $exit.Text = 'Exit'
-    $exit.Add_Click({
-        Stop-Listener
-        if ($script:UiTimer) {
-            $script:UiTimer.Stop()
-        }
-        if ($script:NotifyIcon) {
-            $script:NotifyIcon.Visible = $false
-            $script:NotifyIcon.Dispose()
-        }
-        [System.Windows.Forms.Application]::Exit()
-    })
+    $exit.Add_Click({ Exit-App })
 
     [void] $script:ContextMenu.Items.Add($script:TitleItem)
     [void] $script:ContextMenu.Items.Add($script:StatusItem)
@@ -1531,6 +1794,8 @@ function Build-ContextMenu {
     [void] $script:ContextMenu.Items.Add($script:StopItem)
     [void] $script:ContextMenu.Items.Add($script:OpenLatestItem)
     [void] $script:ContextMenu.Items.Add($script:OpenFolderItem)
+    [void] $script:ContextMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    [void] $script:ContextMenu.Items.Add($updateItem)
     [void] $script:ContextMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
     [void] $script:ContextMenu.Items.Add($settings)
     [void] $script:ContextMenu.Items.Add($about)
@@ -1574,16 +1839,28 @@ function Invoke-ListenerSelfTest {
             $udp.Dispose()
         }
 
-        $tcp = New-Object System.Net.Sockets.TcpClient
-        try {
-            $tcp.Connect('127.0.0.1', 5515)
-            $stream = $tcp.GetStream()
-            $bytes = [Text.Encoding]::UTF8.GetBytes("<13>GW Router Logger TCP self-test`n")
-            $stream.Write($bytes, 0, $bytes.Length)
-            $stream.Flush()
+        $tcpConnected = $false
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            try {
+                $tcp.Connect('127.0.0.1', 5515)
+                $stream = $tcp.GetStream()
+                $bytes = [Text.Encoding]::UTF8.GetBytes("<13>GW Router Logger TCP self-test`n")
+                $stream.Write($bytes, 0, $bytes.Length)
+                $stream.Flush()
+                $tcpConnected = $true
+                break
+            }
+            catch {
+                Start-Sleep -Milliseconds 250
+            }
+            finally {
+                $tcp.Dispose()
+            }
         }
-        finally {
-            $tcp.Dispose()
+
+        if (-not $tcpConnected) {
+            throw 'Listener self-test could not connect to the local TCP listener on port 5515.'
         }
 
         Start-Sleep -Seconds 2
@@ -1591,14 +1868,22 @@ function Invoke-ListenerSelfTest {
         Start-Sleep -Seconds 1
         Update-MenuState
 
-        $latest = Get-LatestLogPath -Config $config
-        if ([string]::IsNullOrWhiteSpace($latest)) {
-            throw 'Listener self-test did not create a log file.'
+        $allLogs = @(Get-ChildItem -LiteralPath $config.LogRoot -Recurse -File -Filter '*.log' -ErrorAction SilentlyContinue)
+        if ($allLogs.Count -eq 0) {
+            throw 'Listener self-test did not create any log files.'
         }
 
-        $content = Get-Content -LiteralPath $latest -Raw -ErrorAction Stop
-        if ($content -notmatch 'self-test') {
-            throw 'Listener self-test log file did not contain the expected test message.'
+        $matchedLog = $null
+        foreach ($logFile in $allLogs) {
+            $content = Get-Content -LiteralPath $logFile.FullName -Raw -ErrorAction SilentlyContinue
+            if ($content -match 'self-test') {
+                $matchedLog = $logFile.FullName
+                break
+            }
+        }
+
+        if (-not $matchedLog) {
+            throw 'Listener self-test log files did not contain the expected test message.'
         }
 
         'LISTENER_SELFTEST_OK'
@@ -1607,6 +1892,17 @@ function Invoke-ListenerSelfTest {
         Stop-Listener
         Save-AppConfig -Config $originalConfig
     }
+}
+
+function Invoke-UpdateCheckSelfTest {
+    $releaseInfo = Get-LatestReleaseInfo
+    if ([string]::IsNullOrWhiteSpace($releaseInfo.Version)) {
+        throw 'Release info did not include a version.'
+    }
+    if ([string]::IsNullOrWhiteSpace($releaseInfo.AssetUrl)) {
+        throw 'Release info did not include a downloadable zip asset.'
+    }
+    'UPDATE_CHECK_OK {0} {1}' -f $releaseInfo.Version, $releaseInfo.AssetName
 }
 
 if ($FirewallOnly) {
@@ -1621,6 +1917,11 @@ if ($SelfTest) {
 
 if ($ListenerSelfTest) {
     Invoke-ListenerSelfTest
+    exit 0
+}
+
+if ($UpdateCheckSelfTest) {
+    Invoke-UpdateCheckSelfTest
     exit 0
 }
 

@@ -2,7 +2,7 @@
 
 `GW Router Logger` is a PowerShell syslog collector for Windows, designed for home labs, residential routers, and small-network troubleshooting.
 
-Current release: `v1.1.1`
+Current release: `v1.2.0`
 
 It focuses on the things that usually break first on normal Windows machines: elevation, pathing, firewall access, bind-address selection, log rollover, and clear on-screen status.
 
@@ -23,6 +23,7 @@ This script does the opposite. It guides setup, validates inputs, uses practical
 - Menu-driven workflow instead of parameter-heavy startup
 - Notification-area GUI app with right-click controls
 - Apps and Features uninstall registration through the installer
+- GitHub-backed in-app update check and reinstall flow
 - Administrator check with self-elevation attempt
 - Residential-friendly defaults: `UDP 514`, `TCP disabled`
 - Automatic suggestion of the local IPv4 address tied to the active default gateway
@@ -52,10 +53,12 @@ This script does the opposite. It guides setup, validates inputs, uses practical
 .\Install-GWRouterLogger.ps1
 ```
 
-4. Open **GW Router Logger** from the Start Menu.
+4. The installer creates Start Menu and Desktop shortcuts and starts the tray app automatically.
 5. Right-click the tray icon and choose **Configure**.
 
-The tray menu shows the app name and version, live status, listener controls, log shortcuts, settings, about, and exit. The listener can be started or stopped from the right-click menu.
+If the installer detects an existing installation, it asks whether to reinstall before making changes.
+
+The tray menu shows the app name and version, live status, listener controls, log shortcuts, update checking, settings, about, and exit. The listener can be started or stopped from the right-click menu.
 
 The installer registers the app in Windows **Apps and Features**. Uninstalling from Windows runs `Uninstall-GWRouterLogger.ps1` and removes the app files and shortcuts. Logs and configuration are preserved unless the uninstaller is run manually with `-RemoveData`.
 
@@ -120,6 +123,7 @@ Tray app controls are primarily in the right-click menu:
 - `Start` and `Stop` control the listener
 - `Open Latest Log` opens the newest `.log` file in Notepad
 - `Open Log Folder` opens the configured log folder
+- `Check for Updates ...` checks the GitHub repo for a newer packaged release and installs it if you approve
 - `Settings` controls Windows startup, diagnostic logging, theme, firewall exception setup, network ports, and log folder
 
 While the listener is running:
