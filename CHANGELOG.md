@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.2 - 2026-05-16
+
+Updater restart reliability release.
+
+### Changed
+
+- Successful in-app updates now explicitly restart tray mode after reinstall instead of relying on the installer restart as an indirect side effect.
+- The update helper now suppresses the installer's auto-start and launches the updated tray app itself once the reinstall completes.
+
 ## v1.3.1 - 2026-05-16
 
 Router log cleanup release.

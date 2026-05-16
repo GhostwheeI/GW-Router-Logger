@@ -3,7 +3,7 @@
 # installs only expose one app script to the user.
 
 $script:AppName = 'GW Router Logger'
-$script:Version = '1.3.1'
+$script:Version = '1.3.2'
 $script:Publisher = 'Ghostwheel'
 $script:GitHubOwner = 'GhostwheeI'
 $script:GitHubRepo = 'GW-Router-Logger'
@@ -282,7 +282,8 @@ try {
         '-InstallPath', `$InstallRoot,
         '-ForceReinstall',
         '-InstallTrayMode',
-        '-SkipTrayPrompt'
+        '-SkipTrayPrompt',
+        '-DoNotStartAfterInstall'
     )
 
     if ((Test-IsProtectedInstallPath -Path `$InstallRoot) -and -not (Test-IsAdministrator)) {
@@ -295,6 +296,21 @@ try {
     if (`$process.ExitCode -ne 0) {
         throw ('Installer exited with code {0}.' -f `$process.ExitCode)
     }
+
+    `$launcherScript = Join-Path -Path `$InstallRoot -ChildPath 'GW-Router-Logger.ps1'
+    if (-not (Test-Path -LiteralPath `$launcherScript)) {
+        throw 'Updated install did not contain GW-Router-Logger.ps1.'
+    }
+
+    Start-Sleep -Milliseconds 800
+    Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden',
+        '-Sta',
+        '-File', `$launcherScript,
+        '-TrayApp'
+    ) -WindowStyle Hidden | Out-Null
 }
 catch {
     Add-Type -AssemblyName System.Windows.Forms
@@ -597,17 +613,31 @@ function Get-ThemeColors {
 
     if ($effective -eq 'Dark') {
         return @{
-            Back = [System.Drawing.Color]::FromArgb(32, 32, 32)
-            Panel = [System.Drawing.Color]::FromArgb(45, 45, 45)
-            Fore = [System.Drawing.Color]::Gainsboro
-            Accent = [System.Drawing.Color]::FromArgb(0, 120, 212)
+            Back = [System.Drawing.Color]::FromArgb(30, 30, 30)
+            Panel = [System.Drawing.Color]::FromArgb(44, 44, 44)
+            InputBack = [System.Drawing.Color]::FromArgb(37, 37, 38)
+            ButtonBack = [System.Drawing.Color]::FromArgb(58, 58, 58)
+            ButtonHover = [System.Drawing.Color]::FromArgb(70, 70, 70)
+            ButtonPressed = [System.Drawing.Color]::FromArgb(82, 82, 82)
+            Fore = [System.Drawing.Color]::FromArgb(240, 240, 240)
+            Muted = [System.Drawing.Color]::FromArgb(205, 205, 205)
+            DisabledFore = [System.Drawing.Color]::FromArgb(170, 170, 170)
+            Border = [System.Drawing.Color]::FromArgb(92, 92, 92)
+            Accent = [System.Drawing.Color]::FromArgb(76, 194, 255)
         }
     }
 
     return @{
         Back = [System.Drawing.Color]::White
         Panel = [System.Drawing.Color]::FromArgb(245, 245, 245)
+        InputBack = [System.Drawing.Color]::White
+        ButtonBack = [System.Drawing.Color]::FromArgb(240, 240, 240)
+        ButtonHover = [System.Drawing.Color]::FromArgb(232, 232, 232)
+        ButtonPressed = [System.Drawing.Color]::FromArgb(224, 224, 224)
         Fore = [System.Drawing.Color]::FromArgb(24, 24, 24)
+        Muted = [System.Drawing.Color]::FromArgb(70, 70, 70)
+        DisabledFore = [System.Drawing.Color]::FromArgb(120, 120, 120)
+        Border = [System.Drawing.Color]::FromArgb(185, 185, 185)
         Accent = [System.Drawing.Color]::FromArgb(0, 95, 184)
     }
 }
@@ -622,13 +652,35 @@ function Apply-ThemeToControl {
     $Control.ForeColor = $Colors.Fore
     foreach ($child in $Control.Controls) {
         if ($child -is [System.Windows.Forms.Button]) {
-            $child.BackColor = $Colors.Panel
+            $child.BackColor = $Colors.ButtonBack
             $child.ForeColor = $Colors.Fore
-            $child.FlatStyle = [System.Windows.Forms.FlatStyle]::System
+            $child.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+            $child.FlatAppearance.BorderColor = $Colors.Border
+            $child.FlatAppearance.MouseOverBackColor = $Colors.ButtonHover
+            $child.FlatAppearance.MouseDownBackColor = $Colors.ButtonPressed
         }
         elseif ($child -is [System.Windows.Forms.GroupBox] -or $child -is [System.Windows.Forms.Panel]) {
             $child.BackColor = $Colors.Back
             $child.ForeColor = $Colors.Fore
+        }
+        elseif ($child -is [System.Windows.Forms.ComboBox]) {
+            $child.BackColor = $Colors.InputBack
+            $child.ForeColor = $Colors.Fore
+            $child.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        }
+        elseif ($child -is [System.Windows.Forms.TextBox] -or $child -is [System.Windows.Forms.NumericUpDown]) {
+            $child.BackColor = $Colors.InputBack
+            $child.ForeColor = $Colors.Fore
+            $child.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        }
+        elseif ($child -is [System.Windows.Forms.CheckBox] -or $child -is [System.Windows.Forms.RadioButton] -or $child -is [System.Windows.Forms.Label]) {
+            $child.BackColor = $Colors.Back
+            if ($child.Enabled) {
+                $child.ForeColor = $Colors.Fore
+            }
+            else {
+                $child.ForeColor = $Colors.DisabledFore
+            }
         }
         else {
             $child.BackColor = $Colors.Back
@@ -1720,7 +1772,7 @@ function Show-SettingsForm {
     $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     $form.MaximizeBox = $false
     $form.MinimizeBox = $false
-    $form.ClientSize = New-Object System.Drawing.Size(560, 520)
+    $form.ClientSize = New-Object System.Drawing.Size(560, 540)
 
     $startCheck = New-Object System.Windows.Forms.CheckBox
     $startCheck.Text = 'Start with Windows'
@@ -1745,7 +1797,7 @@ function Show-SettingsForm {
     $networkGroup = New-Object System.Windows.Forms.GroupBox
     $networkGroup.Text = 'Network Configuration'
     $networkGroup.Location = New-Object System.Drawing.Point(18, 130)
-    $networkGroup.Size = New-Object System.Drawing.Size(520, 135)
+    $networkGroup.Size = New-Object System.Drawing.Size(520, 160)
 
     $udpCheck = New-Object System.Windows.Forms.CheckBox
     $udpCheck.Text = 'UDP'
@@ -1773,7 +1825,10 @@ function Show-SettingsForm {
     $tcpPort.Maximum = 65535
     $tcpPort.Value = [int] $config.TcpPort
 
-    $firewallButton = New-Button -Text 'Add Exception to Firewall for this App' -X 205 -Y 48 -Width 280 -Height 30
+    $udpRecommended = New-Label -Text '(Recommended)' -X 190 -Y 32 -Width 120
+    $tcpRecommended = New-Label -Text '(Recommended)' -X 190 -Y 66 -Width 120
+
+    $firewallButton = New-Button -Text 'Add Exception to Firewall for this App' -X 18 -Y 106 -Width 470 -Height 32
     $firewallButton.Add_Click({
         try {
             $tempConfig = $config.Clone()
@@ -1800,16 +1855,15 @@ function Show-SettingsForm {
     })
 
     $networkGroup.Controls.AddRange(@(
-        $udpCheck, $udpPort, (New-Label -Text '(Recommended)' -X 190 -Y 32 -Width 120),
-        $tcpCheck, $tcpPort, (New-Label -Text '(Recommended)' -X 190 -Y 66 -Width 120),
+        $udpCheck, $udpPort, $udpRecommended,
+        $tcpCheck, $tcpPort, $tcpRecommended,
         $firewallButton
     ))
 
     $sizeGroup = New-Object System.Windows.Forms.GroupBox
     $sizeGroup.Text = 'Log Size Handling'
-    $sizeGroup.Location = New-Object System.Drawing.Point(18, 285)
+    $sizeGroup.Location = New-Object System.Drawing.Point(18, 302)
     $sizeGroup.Size = New-Object System.Drawing.Size(520, 118)
-    $sizeGroup.Enabled = $false
 
     $rotateSize = New-Object System.Windows.Forms.NumericUpDown
     $rotateSize.Location = New-Object System.Drawing.Point(210, 28)
@@ -1817,6 +1871,7 @@ function Show-SettingsForm {
     $rotateSize.Minimum = 1
     $rotateSize.Maximum = 1024
     $rotateSize.Value = [int] ([int64] $config.ActiveLogRotateBytes / 1MB)
+    $rotateSize.Enabled = $false
 
     $rotateAge = New-Object System.Windows.Forms.NumericUpDown
     $rotateAge.Location = New-Object System.Drawing.Point(210, 58)
@@ -1824,6 +1879,7 @@ function Show-SettingsForm {
     $rotateAge.Minimum = 1
     $rotateAge.Maximum = 10080
     $rotateAge.Value = [int] $config.ActiveLogRotateMinutes
+    $rotateAge.Enabled = $false
 
     $archiveCap = New-Object System.Windows.Forms.NumericUpDown
     $archiveCap.Location = New-Object System.Drawing.Point(210, 88)
@@ -1831,6 +1887,7 @@ function Show-SettingsForm {
     $archiveCap.Minimum = 1
     $archiveCap.Maximum = 10240
     $archiveCap.Value = [int] ([int64] $config.MaxCompressedBytes / 1MB)
+    $archiveCap.Enabled = $false
 
     $sizeGroup.Controls.AddRange(@(
         (New-Label -Text 'Rotate active logs at MB' -X 18 -Y 28 -Width 180), $rotateSize,
@@ -1838,12 +1895,12 @@ function Show-SettingsForm {
         (New-Label -Text 'Compressed archive cap MB' -X 18 -Y 88 -Width 180), $archiveCap
     ))
 
-    $logLabel = New-Label -Text 'Log folder' -X 20 -Y 425 -Width 90
+    $logLabel = New-Label -Text 'Log folder' -X 20 -Y 442 -Width 90
     $logBox = New-Object System.Windows.Forms.TextBox
-    $logBox.Location = New-Object System.Drawing.Point(130, 423)
+    $logBox.Location = New-Object System.Drawing.Point(130, 440)
     $logBox.Size = New-Object System.Drawing.Size(300, 24)
     $logBox.Text = [string] $config.LogRoot
-    $browseButton = New-Button -Text 'Browse' -X 440 -Y 421 -Width 80
+    $browseButton = New-Button -Text 'Browse' -X 440 -Y 438 -Width 80
     $browseButton.Add_Click({
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
         $dialog.SelectedPath = $logBox.Text
@@ -1853,8 +1910,8 @@ function Show-SettingsForm {
         $dialog.Dispose()
     })
 
-    $saveButton = New-Button -Text 'Save' -X 335 -Y 475 -Width 90
-    $cancelButton = New-Button -Text 'Cancel' -X 445 -Y 475 -Width 90
+    $saveButton = New-Button -Text 'Save' -X 335 -Y 492 -Width 90
+    $cancelButton = New-Button -Text 'Cancel' -X 445 -Y 492 -Width 90
     $cancelButton.Add_Click({ $form.Close() })
     $saveButton.Add_Click({
         try {
@@ -1899,6 +1956,8 @@ function Show-SettingsForm {
     ))
 
     Apply-ThemeToControl -Control $form -Colors $colors
+    $udpRecommended.ForeColor = $colors.Muted
+    $tcpRecommended.ForeColor = $colors.Muted
     [void] $form.ShowDialog()
     Update-MenuState
     $form.Dispose()
