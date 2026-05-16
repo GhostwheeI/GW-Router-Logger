@@ -11,7 +11,7 @@ function Get-AppVersionValue {
         }
     }
 
-    return '1.3.3'
+    return '1.3.4'
 }
 
 $script:AppName = 'GW Router Logger'
@@ -491,6 +491,7 @@ function Get-AppConfig {
         try {
             $loaded = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json
             $script:CachedConfig = Repair-Config -Config (ConvertTo-PlainHashtable -InputObject $loaded)
+            Sync-StartupShortcut -Config $script:CachedConfig
             return $script:CachedConfig
         }
         catch {
@@ -532,9 +533,18 @@ function Sync-StartupShortcut {
         $wsh = New-Object -ComObject WScript.Shell
         $shortcut = $wsh.CreateShortcut($shortcutPath)
         $shortcut.TargetPath = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
-        $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Sta -File "{0}" -TrayApp' -f (Get-LauncherScriptPath)
+        $shortcutArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Sta -File "{0}" -TrayApp' -f (Get-LauncherScriptPath)
+        if ([bool] $Config.IsConfigured) {
+            $shortcutArguments += ' -StartListener'
+        }
+        $shortcut.Arguments = $shortcutArguments
         $shortcut.WorkingDirectory = Get-ScriptRootPath
-        $shortcut.Description = 'Start GW Router Logger in the notification area'
+        if ([bool] $Config.IsConfigured) {
+            $shortcut.Description = 'Start GW Router Logger in the notification area and begin listening'
+        }
+        else {
+            $shortcut.Description = 'Start GW Router Logger in the notification area'
+        }
         $iconPath = Get-AppIconPath
         if (Test-Path -LiteralPath $iconPath) {
             $shortcut.IconLocation = $iconPath

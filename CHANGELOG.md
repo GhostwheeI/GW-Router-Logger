@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.4 - 2026-05-16
+
+Windows startup listener fix.
+
+### Changed
+
+- `Start with Windows` now creates a startup shortcut that includes `-StartListener` when the app is already configured.
+- Tray startup now re-syncs the startup shortcut from the saved config on launch, so existing installs repair older startup shortcuts automatically.
+
 ## v1.3.3 - 2026-05-16
 
 Version source-of-truth release.

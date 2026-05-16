@@ -29,7 +29,7 @@ function Get-AppVersionValue {
         }
     }
 
-    return '1.3.3'
+    return '1.3.4'
 }
 
 # GW Router Logger
