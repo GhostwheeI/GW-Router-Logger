@@ -34,7 +34,7 @@ function Test-IsAdministrator {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Ensure-Directory {
+function Initialize-Directory {
     param([string] $Path)
     if (-not (Test-Path -LiteralPath $Path)) {
         [void] (New-Item -Path $Path -ItemType Directory -Force)
@@ -70,7 +70,7 @@ function Get-ExistingInstallInfo {
                 }
             }
         }
-        catch {}
+        catch { Write-Verbose "An error occurred and was ignored." }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($requestedFullPath) -and (Test-Path -LiteralPath $requestedFullPath)) {
@@ -84,7 +84,7 @@ function Get-ExistingInstallInfo {
     return $null
 }
 
-function Remove-ExistingInstall {
+function Clear-ExistingInstall {
     param([hashtable] $InstallInfo)
 
     $existingInstallPath = $InstallInfo.InstallLocation
@@ -97,7 +97,7 @@ function Remove-ExistingInstall {
     throw "Existing installation found at $existingInstallPath but the uninstaller script is missing."
 }
 
-function New-AppShortcut {
+function Initialize-AppShortcut {
     param(
         [string] $ShortcutPath,
         [string] $TargetScript,
@@ -158,7 +158,7 @@ if ($existingInstall) {
         }
     }
 
-    Remove-ExistingInstall -InstallInfo $existingInstall
+    Clear-ExistingInstall -InstallInfo $existingInstall
 }
 
 if (-not $SkipTrayPrompt -and -not $PSBoundParameters.ContainsKey('InstallTrayMode')) {
@@ -173,7 +173,7 @@ if (-not $SkipTrayPrompt -and -not $PSBoundParameters.ContainsKey('InstallTrayMo
     }
 }
 
-$installRoot = Ensure-Directory -Path $InstallPath
+$installRoot = Initialize-Directory -Path $InstallPath
 $files = @(
     'GW-Router-Logger.TrayMode.psm1',
     'GW-Router-Logger.ps1',
@@ -198,23 +198,23 @@ if (Test-Path -LiteralPath $sourceAssets) {
 }
 
 $programs = [Environment]::GetFolderPath('Programs')
-$shortcutFolder = Ensure-Directory -Path (Join-Path -Path $programs -ChildPath 'GW Router Logger')
+$shortcutFolder = Initialize-Directory -Path (Join-Path -Path $programs -ChildPath 'GW Router Logger')
 $desktopPath = [Environment]::GetFolderPath('Desktop')
 $launcherScript = Join-Path -Path $installRoot -ChildPath 'GW-Router-Logger.ps1'
 $iconPath = Join-Path -Path (Join-Path -Path $installRoot -ChildPath 'assets') -ChildPath 'gw-router-logger.ico'
 
 if ($installTrayModeSelected) {
-    New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath -TrayApp
-    New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger - Start Listener.lnk') -TargetScript $launcherScript -IconPath $iconPath -TrayApp -StartListener
-    New-AppShortcut -ShortcutPath (Join-Path -Path $desktopPath -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath -TrayApp
+    Initialize-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath -TrayApp
+    Initialize-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger - Start Listener.lnk') -TargetScript $launcherScript -IconPath $iconPath -TrayApp -StartListener
+    Initialize-AppShortcut -ShortcutPath (Join-Path -Path $desktopPath -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath -TrayApp
 }
 else {
     $trayShortcut = Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger - Start Listener.lnk'
     if (Test-Path -LiteralPath $trayShortcut) {
         Remove-Item -LiteralPath $trayShortcut -Force -ErrorAction SilentlyContinue
     }
-    New-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath
-    New-AppShortcut -ShortcutPath (Join-Path -Path $desktopPath -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath
+    Initialize-AppShortcut -ShortcutPath (Join-Path -Path $shortcutFolder -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath
+    Initialize-AppShortcut -ShortcutPath (Join-Path -Path $desktopPath -ChildPath 'GW Router Logger.lnk') -TargetScript $launcherScript -IconPath $iconPath
 }
 
 $uninstallScript = Join-Path -Path $installRoot -ChildPath 'Uninstall-GWRouterLogger.ps1'

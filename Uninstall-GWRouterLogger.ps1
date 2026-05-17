@@ -23,7 +23,7 @@ function Get-InstalledPath {
                 }
             }
         }
-        catch {}
+        catch { Write-Verbose "An error occurred and was ignored." }
     }
 
     return Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -47,10 +47,9 @@ function Test-SafeInstallPath {
     return $false
 }
 
-function Stop-RunningTray {
+function Suspend-RunningTray {
     param([string] $InstallPath)
 
-    $escaped = $InstallPath.Replace('\', '\\')
     $processes = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction SilentlyContinue |
         Where-Object {
             $_.ProcessId -ne $PID -and
@@ -65,12 +64,12 @@ function Stop-RunningTray {
         try {
             Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
         }
-        catch {}
+        catch { Write-Verbose "An error occurred and was ignored." }
     }
 }
 
 $installPath = Get-InstalledPath
-Stop-RunningTray -InstallPath $installPath
+Suspend-RunningTray -InstallPath $installPath
 
 $programs = [Environment]::GetFolderPath('Programs')
 $shortcutFolder = Join-Path -Path $programs -ChildPath 'GW Router Logger'

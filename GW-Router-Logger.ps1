@@ -189,7 +189,7 @@ function Test-EnvironmentCompatibility {
     }
 }
 
-function Ensure-Elevation {
+function Assert-Elevation {
     if (Test-IsAdministrator) {
         return $true
     }
@@ -213,7 +213,7 @@ function Ensure-Elevation {
     }
 }
 
-function Pause-ForUser {
+function Suspend-ForUser {
     param([string] $Message = 'Press Enter to continue')
     Write-Host
     Read-Host $Message | Out-Null
@@ -231,7 +231,7 @@ function Get-ScriptRootPath {
     return (Get-Location).Path
 }
 
-function Ensure-Directory {
+function Initialize-Directory {
     param([Parameter(Mandatory = $true)] [string] $Path)
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -250,15 +250,15 @@ function Get-InternalRuntimeLogRoot {
 
     foreach ($candidate in $candidateRoots) {
         try {
-            return (Ensure-Directory -Path $candidate)
+            return (Initialize-Directory -Path $candidate)
         }
-        catch {}
+        catch { Write-Verbose "An error occurred and was ignored." }
     }
 
     throw 'No writable runtime log folder was found for internal server events.'
 }
 
-function Move-DirectoryContents {
+function Move-DirectoryContent {
     param(
         [string] $SourcePath,
         [string] $DestinationPath
@@ -268,7 +268,7 @@ function Move-DirectoryContents {
         return
     }
 
-    Ensure-Directory -Path $DestinationPath | Out-Null
+    Initialize-Directory -Path $DestinationPath | Out-Null
     $children = @(Get-ChildItem -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue)
     foreach ($child in $children) {
         Move-Item -LiteralPath $child.FullName -Destination (Join-Path -Path $DestinationPath -ChildPath $child.Name) -Force -ErrorAction SilentlyContinue
@@ -290,7 +290,7 @@ function Merge-TextFileIntoPath {
     }
 
     $destinationDirectory = Split-Path -Path $DestinationPath -Parent
-    Ensure-Directory -Path $destinationDirectory | Out-Null
+    Initialize-Directory -Path $destinationDirectory | Out-Null
 
     if (-not (Test-Path -LiteralPath $DestinationPath)) {
         Move-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force -ErrorAction SilentlyContinue
@@ -325,12 +325,12 @@ function Remove-DirectoryIfEmpty {
 function Resolve-LogLayout {
     param([hashtable] $Settings)
 
-    $Settings.LogRoot = Ensure-Directory -Path $Settings.LogRoot
+    $Settings.LogRoot = Initialize-Directory -Path $Settings.LogRoot
     $Settings.SourceLogRoot = $Settings.LogRoot
     $Settings.ServerLogRoot = Get-InternalRuntimeLogRoot
 
-    $sourceArchiveRoot = Ensure-Directory -Path (Join-Path -Path $Settings.SourceLogRoot -ChildPath 'archive')
-    $serverArchiveRoot = Ensure-Directory -Path (Join-Path -Path $Settings.ServerLogRoot -ChildPath 'archive')
+    $sourceArchiveRoot = Initialize-Directory -Path (Join-Path -Path $Settings.SourceLogRoot -ChildPath 'archive')
+    $serverArchiveRoot = Initialize-Directory -Path (Join-Path -Path $Settings.ServerLogRoot -ChildPath 'archive')
 
     $legacySourceRoot = Join-Path -Path $Settings.LogRoot -ChildPath 'sources'
     $legacySourceArchiveRoot = Join-Path -Path $legacySourceRoot -ChildPath 'archive'
@@ -338,7 +338,7 @@ function Resolve-LogLayout {
     $legacyServerArchiveRoot = Join-Path -Path $legacyServerRoot -ChildPath 'archive'
 
     if (Test-Path -LiteralPath $legacySourceArchiveRoot) {
-        Move-DirectoryContents -SourcePath $legacySourceArchiveRoot -DestinationPath $sourceArchiveRoot
+        Move-DirectoryContent -SourcePath $legacySourceArchiveRoot -DestinationPath $sourceArchiveRoot
     }
     if (Test-Path -LiteralPath $legacySourceRoot) {
         $sourceFiles = @(Get-ChildItem -LiteralPath $legacySourceRoot -Force -File -ErrorAction SilentlyContinue)
@@ -347,7 +347,7 @@ function Resolve-LogLayout {
         }
     }
     if (Test-Path -LiteralPath $legacyServerArchiveRoot) {
-        Move-DirectoryContents -SourcePath $legacyServerArchiveRoot -DestinationPath $serverArchiveRoot
+        Move-DirectoryContent -SourcePath $legacyServerArchiveRoot -DestinationPath $serverArchiveRoot
     }
     if (Test-Path -LiteralPath $legacyServerRoot) {
         $serverFiles = @(Get-ChildItem -LiteralPath $legacyServerRoot -Force -File -ErrorAction SilentlyContinue)
@@ -429,7 +429,7 @@ function Get-SafeFileName {
     return $safeValue
 }
 
-function Get-LocalIpv4Addresses {
+function Get-LocalIpv4Address {
     $results = New-Object System.Collections.ArrayList
     try {
         foreach ($nic in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
@@ -456,14 +456,13 @@ function Get-LocalIpv4Addresses {
             }
         }
     }
-    catch {
-    }
+    catch { Write-Verbose "An error occurred and was ignored." }
 
     return @($results | Sort-Object Address -Unique)
 }
 
 function Get-PrimaryGatewayAddressInfo {
-    $addresses = Get-LocalIpv4Addresses
+    $addresses = Get-LocalIpv4Address
     if (-not $addresses -or $addresses.Count -eq 0) {
         return $null
     }
@@ -507,8 +506,7 @@ function Get-PrimaryGatewayAddressInfo {
             }
         }
     }
-    catch {
-    }
+    catch { Write-Verbose "An error occurred and was ignored." }
 
     return $null
 }
@@ -617,7 +615,7 @@ function Read-MenuChoice {
 function Select-BindAddress {
     param([string] $DefaultAddress)
 
-    $addresses = Get-LocalIpv4Addresses
+    $addresses = Get-LocalIpv4Address
     $gatewayInfo = Get-PrimaryGatewayAddressInfo
 
     if ($gatewayInfo) {
@@ -685,7 +683,7 @@ function Select-BindAddress {
     }
 }
 
-function Get-RunSettings {
+function Get-RunSetting {
     $defaultBind = $null
     $defaultUdp = $script:DefaultUdpPort
     $defaultTcp = $script:DefaultTcpPort
@@ -761,7 +759,7 @@ function Get-RunSettings {
     return $settings
 }
 
-function Resolve-LogPaths {
+function Resolve-LogPath {
     param([hashtable] $Settings)
 
     Resolve-LogLayout -Settings $Settings
@@ -804,7 +802,7 @@ function Get-SafeLogPath {
     return (Join-Path -Path $Directory -ChildPath ('{0}-{1}{2}' -f $trimmed, $hash, $Suffix))
 }
 
-function Rotate-And-CompressLog {
+function Archive-LogFile {
     param(
         [Parameter(Mandatory = $true)] [string] $LogFilePath,
         [Parameter(Mandatory = $true)] [string] $ArchiveDirectory,
@@ -826,7 +824,7 @@ function Rotate-And-CompressLog {
         return $false
     }
 
-    Ensure-Directory -Path $ArchiveDirectory | Out-Null
+    Initialize-Directory -Path $ArchiveDirectory | Out-Null
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $archiveBaseName = '{0}-{1}' -f $fileInfo.BaseName, $timestamp
@@ -857,7 +855,7 @@ function Rotate-And-CompressLog {
     }
 }
 
-function Enforce-CompressedArchiveCap {
+function Limit-CompressedArchive {
     param(
         [Parameter(Mandatory = $true)] [string] $RootPath,
         [hashtable] $State
@@ -913,9 +911,9 @@ function Write-LogRecord {
     $line = '{0} [{1}] {2}' -f $timestamp, $Category.ToUpperInvariant(), $Message
     try {
         Add-Content -LiteralPath $targetPath -Value $line -Encoding UTF8
-        $rotated = Rotate-And-CompressLog -LogFilePath $targetPath -ArchiveDirectory $archiveRoot -State $State
+        $rotated = Archive-LogFile -LogFilePath $targetPath -ArchiveDirectory $archiveRoot -State $State
         if ($rotated) {
-            Enforce-CompressedArchiveCap -RootPath $Settings.LogRoot -State $State
+            Limit-CompressedArchive -RootPath $Settings.LogRoot -State $State
         }
     }
     catch {
@@ -971,15 +969,13 @@ function Resolve-SourceIdentity {
             }
         }
     }
-    catch {
-    }
+    catch { Write-Verbose "An error occurred and was ignored." }
     finally {
         if ($asyncResult) {
             try {
                 $asyncResult.AsyncWaitHandle.Close()
             }
-            catch {
-            }
+            catch { Write-Verbose "An error occurred and was ignored." }
         }
     }
 
@@ -1017,7 +1013,7 @@ function Test-PathWritable {
     param([Parameter(Mandatory = $true)] [string] $DirectoryPath)
 
     try {
-        $resolved = Ensure-Directory -Path $DirectoryPath
+        $resolved = Initialize-Directory -Path $DirectoryPath
         $probeFile = Join-Path -Path $resolved -ChildPath ('write-test-{0}.tmp' -f ([guid]::NewGuid().ToString('N')))
         Set-Content -LiteralPath $probeFile -Value 'ok' -Encoding ASCII
         Remove-Item -LiteralPath $probeFile -Force
@@ -1044,7 +1040,7 @@ function Resolve-PreferredLogRoot {
         }
 
         if (Test-PathWritable -DirectoryPath $candidate) {
-            $Settings.LogRoot = Ensure-Directory -Path $candidate
+            $Settings.LogRoot = Initialize-Directory -Path $candidate
             Resolve-LogLayout -Settings $Settings
             return
         }
@@ -1092,7 +1088,7 @@ function Test-PortAvailable {
     }
 }
 
-function Ensure-FirewallRule {
+function Initialize-FirewallRule {
     param(
         [ValidateSet('UDP', 'TCP')] [string] $Protocol,
         [int] $Port
@@ -1218,7 +1214,7 @@ function Show-NoLogGuidance {
     Write-Host '5. The router and this PC are on reachable networks'
     Write-Host '6. If the router supports only UDP, keep TCP disabled unless needed'
     Write-Host
-    Pause-ForUser -Message 'Press Enter to return to the listener'
+    Suspend-ForUser -Message 'Press Enter to return to the listener'
 }
 
 function Test-TcpClientClosed {
@@ -1241,7 +1237,7 @@ function Test-TcpClientClosed {
     }
 }
 
-function Get-CompletedTcpMessages {
+function Get-CompletedTcpMessage {
     param([string] $Buffer)
 
     $messages = New-Object System.Collections.ArrayList
@@ -1387,7 +1383,7 @@ function Start-LogServer {
     Resolve-PreferredLogRoot -Settings $Settings
     $state = New-RuntimeState -Settings $Settings
 
-    Enforce-CompressedArchiveCap -RootPath $Settings.LogRoot -State $state
+    Limit-CompressedArchive -RootPath $Settings.LogRoot -State $state
     Write-ServerEvent -Settings $Settings -State $state -Message 'Server startup requested.'
 
     if ($Settings.UdpPort -gt 0 -and -not (Test-PortAvailable -Address $Settings.BindAddress -Port $Settings.UdpPort -Protocol 'UDP')) {
@@ -1405,7 +1401,7 @@ function Start-LogServer {
 
     try {
         if ($Settings.UdpPort -gt 0) {
-            Ensure-FirewallRule -Protocol 'UDP' -Port $Settings.UdpPort
+            Initialize-FirewallRule -Protocol 'UDP' -Port $Settings.UdpPort
             $udpEndpoint = New-Object System.Net.IPEndPoint $bindIp, $Settings.UdpPort
             $udpClient = New-Object System.Net.Sockets.UdpClient
             $udpClient.Client.Bind($udpEndpoint)
@@ -1414,7 +1410,7 @@ function Start-LogServer {
         }
 
         if ($Settings.TcpPort -gt 0) {
-            Ensure-FirewallRule -Protocol 'TCP' -Port $Settings.TcpPort
+            Initialize-FirewallRule -Protocol 'TCP' -Port $Settings.TcpPort
             $tcpListener = New-Object System.Net.Sockets.TcpListener $bindIp, $Settings.TcpPort
             $tcpListener.Start()
             $startupMessage = 'TCP listener started on {0}:{1}.' -f $Settings.BindAddress, $Settings.TcpPort
@@ -1522,7 +1518,7 @@ function Start-LogServer {
 
                         $clientState.LastActivity = Get-Date
                         $clientState.Buffer += [Text.Encoding]::UTF8.GetString($readBuffer, 0, $bytesRead)
-                        $parsed = Get-CompletedTcpMessages -Buffer $clientState.Buffer
+                        $parsed = Get-CompletedTcpMessage -Buffer $clientState.Buffer
                         foreach ($message in $parsed.Messages) {
                             Register-ReceivedMessage -Settings $Settings -State $state -Protocol 'TCP' -Address $clientState.Address -RawMessage $message
                         }
@@ -1538,10 +1534,9 @@ function Start-LogServer {
                             Register-ReceivedMessage -Settings $Settings -State $state -Protocol 'TCP' -Address $clientState.Address -RawMessage $clientState.Buffer
                         }
                     }
-                    catch {
-                    }
-                    try { $clientState.Stream.Dispose() } catch {}
-                    try { $clientState.Client.Dispose() } catch {}
+                    catch { Write-Verbose "An error occurred and was ignored." }
+                    try { $clientState.Stream.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
+                    try { $clientState.Client.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
                     $tcpClients.RemoveAt($index)
                 }
             }
@@ -1568,17 +1563,16 @@ function Start-LogServer {
                     Register-ReceivedMessage -Settings $Settings -State $state -Protocol 'TCP' -Address $clientState.Address -RawMessage $clientState.Buffer
                 }
             }
-            catch {
-            }
-            try { $clientState.Stream.Dispose() } catch {}
-            try { $clientState.Client.Dispose() } catch {}
+            catch { Write-Verbose "An error occurred and was ignored." }
+            try { $clientState.Stream.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
+            try { $clientState.Client.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
         }
 
         if ($udpClient) {
-            try { $udpClient.Dispose() } catch {}
+            try { $udpClient.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
         }
         if ($tcpListener) {
-            try { $tcpListener.Stop() } catch {}
+            try { $tcpListener.Stop() } catch { Write-Verbose "An error occurred and was ignored." }
         }
 
         $state.Status = 'Stopped'
@@ -1597,7 +1591,7 @@ function Show-EnvironmentSummary {
     Write-Host ('Working dir:    {0}' -f (Get-Location).Path)
     Write-Host
     Write-UiLine 'Detected IPv4 addresses' Cyan
-    $addresses = Get-LocalIpv4Addresses
+    $addresses = Get-LocalIpv4Address
     if ($addresses.Count -eq 0) {
         Write-Host 'No active IPv4 addresses detected.'
     }
@@ -1606,7 +1600,7 @@ function Show-EnvironmentSummary {
             Write-Host ('{0}  ({1})' -f $entry.Address, $entry.Name)
         }
     }
-    Pause-ForUser
+    Suspend-ForUser
 }
 
 function Show-DefaultSettingsMenu {
@@ -1689,12 +1683,12 @@ function Show-MainMenu {
         switch ($selection) {
             '1' {
                 try {
-                    $settings = Get-RunSettings
+                    $settings = Get-RunSetting
                     Start-LogServer -Settings $settings
                 }
                 catch {
                     Write-UiLine $_.Exception.Message Yellow
-                    Pause-ForUser
+                    Suspend-ForUser
                 }
             }
             '2' {
@@ -1728,7 +1722,7 @@ try {
     # Startup remains intentionally small: verify elevation, then hand off to the menu.
     Test-EnvironmentCompatibility
 
-    if (-not (Ensure-Elevation)) {
+    if (-not (Assert-Elevation)) {
         return
     }
 
@@ -1737,5 +1731,5 @@ try {
 }
 catch {
     Write-UiLine ('Fatal error: {0}' -f $_.Exception.Message) Red
-    Pause-ForUser
+    Suspend-ForUser
 }
