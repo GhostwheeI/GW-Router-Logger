@@ -93,7 +93,7 @@ function Get-AppDataRoot {
     return Join-Path -Path $env:LOCALAPPDATA -ChildPath 'GW-Router-Logger'
 }
 
-function Ensure-Directory {
+function Initialize-Directory {
     param([Parameter(Mandatory = $true)] [string] $Path)
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -103,15 +103,15 @@ function Ensure-Directory {
 }
 
 function Get-ConfigPath {
-    return Join-Path -Path (Ensure-Directory -Path (Get-AppDataRoot)) -ChildPath 'config.json'
+    return Join-Path -Path (Initialize-Directory -Path (Get-AppDataRoot)) -ChildPath 'config.json'
 }
 
 function Get-AppLogRoot {
-    return Ensure-Directory -Path (Join-Path -Path (Get-AppDataRoot) -ChildPath 'diagnostics')
+    return Initialize-Directory -Path (Join-Path -Path (Get-AppDataRoot) -ChildPath 'diagnostics')
 }
 
 function Get-InternalRuntimeLogRoot {
-    return Ensure-Directory -Path (Join-Path -Path (Get-AppLogRoot) -ChildPath 'listener-runtime')
+    return Initialize-Directory -Path (Join-Path -Path (Get-AppLogRoot) -ChildPath 'listener-runtime')
 }
 
 function Get-AppLogPath {
@@ -188,7 +188,7 @@ function Get-LatestReleaseInfo {
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     }
-    catch {}
+    catch { Write-Verbose "An error occurred and was ignored." }
 
     $headers = @{
         'User-Agent' = '{0}/{1}' -f $script:AppName, $script:Version
@@ -223,7 +223,7 @@ function Get-LatestReleaseInfo {
     }
 }
 
-function Start-UpdateInstallerProcess {
+function Initialize-UpdateInstallerProcess {
     param([hashtable] $ReleaseInfo)
 
     $installRoot = Get-ScriptRootPath
@@ -241,7 +241,7 @@ param(
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 }
-catch {}
+catch { Write-Verbose "An error occurred and was ignored." }
 
 function Test-IsAdministrator {
     `$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -271,7 +271,7 @@ for (`$attempt = 0; `$attempt -lt 120; `$attempt++) {
             break
         }
     }
-    catch {}
+    catch { Write-Verbose "An error occurred and was ignored." }
     Start-Sleep -Milliseconds 500
 }
 
@@ -358,7 +358,7 @@ finally {
     Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $arguments -WindowStyle Hidden | Out-Null
 }
 
-function Rotate-AppLog {
+function Compress-AppLog {
     $path = Get-AppLogPath
     if (-not (Test-Path -LiteralPath $path)) {
         return
@@ -392,7 +392,7 @@ function Write-AppLog {
             return
         }
 
-        Rotate-AppLog
+        Compress-AppLog
         $line = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'), $Message
         Add-Content -LiteralPath (Get-AppLogPath) -Value $line -Encoding UTF8
     }
@@ -410,7 +410,7 @@ function Test-IsAdministrator {
 function Get-DefaultLogRoot {
     $scriptDefault = Join-Path -Path (Get-ScriptRootPath) -ChildPath 'GW-ROUTER-LOGS'
     try {
-        Ensure-Directory -Path $scriptDefault | Out-Null
+        Initialize-Directory -Path $scriptDefault | Out-Null
         $testPath = Join-Path -Path $scriptDefault -ChildPath '.write-test'
         Set-Content -LiteralPath $testPath -Value 'test' -Encoding ASCII -ErrorAction Stop
         Remove-Item -LiteralPath $testPath -Force -ErrorAction SilentlyContinue
@@ -589,7 +589,7 @@ function Get-SuggestedBindAddress {
     return ''
 }
 
-function Get-LocalIPv4Addresses {
+function Get-LocalIpv4Address {
     $addresses = New-Object System.Collections.ArrayList
     [void] $addresses.Add('0.0.0.0')
 
@@ -616,7 +616,7 @@ function Get-LocalIPv4Addresses {
     return @($addresses)
 }
 
-function Get-ThemeColors {
+function Get-ThemeColor {
     param([string] $Theme)
 
     $effective = $Theme
@@ -664,7 +664,7 @@ function Get-ThemeColors {
     }
 }
 
-function Apply-ThemeToControl {
+function Initialize-ThemeToControl {
     param(
         [System.Windows.Forms.Control] $Control,
         [hashtable] $Colors
@@ -708,11 +708,11 @@ function Apply-ThemeToControl {
             $child.BackColor = $Colors.Back
             $child.ForeColor = $Colors.Fore
         }
-        Apply-ThemeToControl -Control $child -Colors $Colors
+        Initialize-ThemeToControl -Control $child -Colors $Colors
     }
 }
 
-function New-Label {
+function Initialize-Label {
     param(
         [string] $Text,
         [int] $X,
@@ -729,7 +729,7 @@ function New-Label {
     return $label
 }
 
-function New-Button {
+function Initialize-Button {
     param(
         [string] $Text,
         [int] $X,
@@ -765,11 +765,11 @@ function Move-LogRoot {
     $oldFull = [IO.Path]::GetFullPath($OldPath)
     $newFull = [IO.Path]::GetFullPath($NewPath)
     if ($oldFull.TrimEnd('\') -ieq $newFull.TrimEnd('\')) {
-        Ensure-Directory -Path $newFull | Out-Null
+        Initialize-Directory -Path $newFull | Out-Null
         return
     }
 
-    Ensure-Directory -Path $newFull | Out-Null
+    Initialize-Directory -Path $newFull | Out-Null
     if (-not (Test-Path -LiteralPath $oldFull)) {
         return
     }
@@ -781,7 +781,7 @@ function Move-LogRoot {
     }
 }
 
-function Move-DirectoryContents {
+function Move-DirectoryContent {
     param(
         [string] $SourcePath,
         [string] $DestinationPath
@@ -791,7 +791,7 @@ function Move-DirectoryContents {
         return
     }
 
-    Ensure-Directory -Path $DestinationPath | Out-Null
+    Initialize-Directory -Path $DestinationPath | Out-Null
     $children = @(Get-ChildItem -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue)
     foreach ($child in $children) {
         Move-Item -LiteralPath $child.FullName -Destination (Join-Path -Path $DestinationPath -ChildPath $child.Name) -Force -ErrorAction SilentlyContinue
@@ -813,7 +813,7 @@ function Merge-TextFileIntoPath {
     }
 
     $destinationDirectory = Split-Path -Path $DestinationPath -Parent
-    Ensure-Directory -Path $destinationDirectory | Out-Null
+    Initialize-Directory -Path $destinationDirectory | Out-Null
 
     if (-not (Test-Path -LiteralPath $DestinationPath)) {
         Move-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force -ErrorAction SilentlyContinue
@@ -832,7 +832,7 @@ function Merge-TextFileIntoPath {
     Remove-Item -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue
 }
 
-function Remove-DirectoryIfEmpty {
+function Clear-DirectoryIfEmpty {
     param([string] $Path)
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -845,15 +845,15 @@ function Remove-DirectoryIfEmpty {
     }
 }
 
-function Resolve-LogLayout {
+function Confirm-LogLayout {
     param([hashtable] $Settings)
 
-    $Settings.LogRoot = Ensure-Directory -Path $Settings.LogRoot
+    $Settings.LogRoot = Initialize-Directory -Path $Settings.LogRoot
     $Settings.SourceLogRoot = $Settings.LogRoot
-    $Settings.RuntimeLogRoot = Ensure-Directory -Path (Get-InternalRuntimeLogRoot)
+    $Settings.RuntimeLogRoot = Initialize-Directory -Path (Get-InternalRuntimeLogRoot)
 
-    $sourceArchiveRoot = Ensure-Directory -Path (Join-Path -Path $Settings.SourceLogRoot -ChildPath 'archive')
-    $runtimeArchiveRoot = Ensure-Directory -Path (Join-Path -Path $Settings.RuntimeLogRoot -ChildPath 'archive')
+    $sourceArchiveRoot = Initialize-Directory -Path (Join-Path -Path $Settings.SourceLogRoot -ChildPath 'archive')
+    $runtimeArchiveRoot = Initialize-Directory -Path (Join-Path -Path $Settings.RuntimeLogRoot -ChildPath 'archive')
 
     $legacySourceRoot = Join-Path -Path $Settings.LogRoot -ChildPath 'sources'
     $legacySourceArchiveRoot = Join-Path -Path $legacySourceRoot -ChildPath 'archive'
@@ -861,7 +861,7 @@ function Resolve-LogLayout {
     $legacyServerArchiveRoot = Join-Path -Path $legacyServerRoot -ChildPath 'archive'
 
     if (Test-Path -LiteralPath $legacySourceArchiveRoot) {
-        Move-DirectoryContents -SourcePath $legacySourceArchiveRoot -DestinationPath $sourceArchiveRoot
+        Move-DirectoryContent -SourcePath $legacySourceArchiveRoot -DestinationPath $sourceArchiveRoot
     }
     if (Test-Path -LiteralPath $legacySourceRoot) {
         $sourceFiles = @(Get-ChildItem -LiteralPath $legacySourceRoot -Force -File -ErrorAction SilentlyContinue)
@@ -870,7 +870,7 @@ function Resolve-LogLayout {
         }
     }
     if (Test-Path -LiteralPath $legacyServerArchiveRoot) {
-        Move-DirectoryContents -SourcePath $legacyServerArchiveRoot -DestinationPath $runtimeArchiveRoot
+        Move-DirectoryContent -SourcePath $legacyServerArchiveRoot -DestinationPath $runtimeArchiveRoot
     }
     if (Test-Path -LiteralPath $legacyServerRoot) {
         $serverFiles = @(Get-ChildItem -LiteralPath $legacyServerRoot -Force -File -ErrorAction SilentlyContinue)
@@ -879,10 +879,10 @@ function Resolve-LogLayout {
         }
     }
 
-    Remove-DirectoryIfEmpty -Path $legacySourceArchiveRoot
-    Remove-DirectoryIfEmpty -Path $legacySourceRoot
-    Remove-DirectoryIfEmpty -Path $legacyServerArchiveRoot
-    Remove-DirectoryIfEmpty -Path $legacyServerRoot
+    Clear-DirectoryIfEmpty -Path $legacySourceArchiveRoot
+    Clear-DirectoryIfEmpty -Path $legacySourceRoot
+    Clear-DirectoryIfEmpty -Path $legacyServerArchiveRoot
+    Clear-DirectoryIfEmpty -Path $legacyServerRoot
 }
 
 function Test-PortAvailable {
@@ -958,11 +958,11 @@ function Open-LatestLog {
 
 function Open-LogFolder {
     $config = Get-AppConfig
-    Ensure-Directory -Path $config.LogRoot | Out-Null
+    Initialize-Directory -Path $config.LogRoot | Out-Null
     Start-Process -FilePath 'explorer.exe' -ArgumentList ('"{0}"' -f $config.LogRoot) | Out-Null
 }
 
-function Ensure-FirewallRule {
+function Initialize-FirewallRule {
     param(
         [ValidateSet('UDP', 'TCP')] [string] $Protocol,
         [int] $Port
@@ -1015,10 +1015,10 @@ function Add-FirewallRulesForConfig {
     }
 
     if ([bool] $Config.UdpEnabled) {
-        Ensure-FirewallRule -Protocol 'UDP' -Port ([int] $Config.UdpPort)
+        Initialize-FirewallRule -Protocol 'UDP' -Port ([int] $Config.UdpPort)
     }
     if ([bool] $Config.TcpEnabled) {
-        Ensure-FirewallRule -Protocol 'TCP' -Port ([int] $Config.TcpPort)
+        Initialize-FirewallRule -Protocol 'TCP' -Port ([int] $Config.TcpPort)
     }
 }
 
@@ -1028,14 +1028,14 @@ function Invoke-FirewallOnlyMode {
     }
 
     if ($FirewallUdpPort -gt 0) {
-        Ensure-FirewallRule -Protocol 'UDP' -Port $FirewallUdpPort
+        Initialize-FirewallRule -Protocol 'UDP' -Port $FirewallUdpPort
     }
     if ($FirewallTcpPort -gt 0) {
-        Ensure-FirewallRule -Protocol 'TCP' -Port $FirewallTcpPort
+        Initialize-FirewallRule -Protocol 'TCP' -Port $FirewallTcpPort
     }
 }
 
-function New-ListenerScriptBlock {
+function Initialize-ListenerScriptBlock {
     return {
         param(
             [hashtable] $Settings,
@@ -1044,7 +1044,7 @@ function New-ListenerScriptBlock {
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-        function Ensure-Directory {
+        function Initialize-Directory {
             param([string] $Path)
             if (-not (Test-Path -LiteralPath $Path)) {
                 [void] (New-Item -Path $Path -ItemType Directory -Force)
@@ -1077,11 +1077,11 @@ function New-ListenerScriptBlock {
                 [string] $BaseName,
                 [string] $Suffix
             )
-            Ensure-Directory -Path $Directory | Out-Null
+            Initialize-Directory -Path $Directory | Out-Null
             return Join-Path -Path $Directory -ChildPath ((Get-SafeFileName -Value $BaseName) + $Suffix)
         }
 
-        function Rotate-And-CompressLog {
+        function Move-AndCompressLog {
             param(
                 [string] $LogFilePath,
                 [string] $ArchiveDirectory
@@ -1097,7 +1097,7 @@ function New-ListenerScriptBlock {
                 return $false
             }
 
-            Ensure-Directory -Path $ArchiveDirectory | Out-Null
+            Initialize-Directory -Path $ArchiveDirectory | Out-Null
             $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
             $baseName = '{0}-{1}' -f $fileInfo.BaseName, $timestamp
             $rotatedPath = Get-SafeLogPath -Directory $ArchiveDirectory -BaseName $baseName -Suffix '.log'
@@ -1120,7 +1120,7 @@ function New-ListenerScriptBlock {
             return $true
         }
 
-        function Enforce-CompressedArchiveCap {
+        function Limit-CompressedArchive {
             param([string] $RootPath)
             $archives = @(Get-ChildItem -LiteralPath $RootPath -Recurse -File -Filter '*.zip' -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc)
             $totalBytes = 0
@@ -1140,7 +1140,7 @@ function New-ListenerScriptBlock {
 
         $sourceNameCache = @{}
 
-        function Resolve-SourceIdentity {
+        function Confirm-SourceIdentity {
             param([string] $Address)
 
             if (-not [bool] $Settings.ResolveHostNames) {
@@ -1193,8 +1193,8 @@ function New-ListenerScriptBlock {
 
             $line = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'), $Message
             Add-Content -LiteralPath $targetPath -Value $line -Encoding UTF8
-            if (Rotate-And-CompressLog -LogFilePath $targetPath -ArchiveDirectory $archiveRoot) {
-                Enforce-CompressedArchiveCap -RootPath $Settings.LogRoot
+            if (Move-AndCompressLog -LogFilePath $targetPath -ArchiveDirectory $archiveRoot) {
+                Limit-CompressedArchive -RootPath $Settings.LogRoot
             }
         }
 
@@ -1214,7 +1214,7 @@ function New-ListenerScriptBlock {
                 [string] $RawMessage
             )
 
-            $sourceIdentity = Resolve-SourceIdentity -Address $Address
+            $sourceIdentity = Confirm-SourceIdentity -Address $Address
             $Runtime.LastReceiveTime = Get-Date
             $Runtime.LastSender = $sourceIdentity
             $Runtime.MessageCount = [int64] $Runtime.MessageCount + 1
@@ -1230,7 +1230,7 @@ function New-ListenerScriptBlock {
             Write-LogRecord -Category 'server' -SourceName 'server' -Message ('Received {0} message from {1}: {2}' -f $Protocol, $sourceIdentity, (Get-SyslogSummary -RawMessage $RawMessage))
         }
 
-        function Get-CompletedTcpMessages {
+        function Get-CompletedTcpMessage {
             param([string] $Buffer)
 
             $messages = New-Object System.Collections.ArrayList
@@ -1264,12 +1264,12 @@ function New-ListenerScriptBlock {
         $tcpClients = New-Object System.Collections.ArrayList
 
         try {
-            $Settings.LogRoot = Ensure-Directory -Path $Settings.LogRoot
-            $Settings.SourceLogRoot = Ensure-Directory -Path $Settings.SourceLogRoot
-            $Settings.RuntimeLogRoot = Ensure-Directory -Path $Settings.RuntimeLogRoot
-            Ensure-Directory -Path (Join-Path -Path $Settings.LogRoot -ChildPath 'archive') | Out-Null
-            Ensure-Directory -Path (Join-Path -Path $Settings.RuntimeLogRoot -ChildPath 'archive') | Out-Null
-            Enforce-CompressedArchiveCap -RootPath $Settings.LogRoot
+            $Settings.LogRoot = Initialize-Directory -Path $Settings.LogRoot
+            $Settings.SourceLogRoot = Initialize-Directory -Path $Settings.SourceLogRoot
+            $Settings.RuntimeLogRoot = Initialize-Directory -Path $Settings.RuntimeLogRoot
+            Initialize-Directory -Path (Join-Path -Path $Settings.LogRoot -ChildPath 'archive') | Out-Null
+            Initialize-Directory -Path (Join-Path -Path $Settings.RuntimeLogRoot -ChildPath 'archive') | Out-Null
+            Limit-CompressedArchive -RootPath $Settings.LogRoot
 
             $bindIp = [System.Net.IPAddress]::Parse($Settings.BindAddress)
             if ([bool] $Settings.UdpEnabled) {
@@ -1342,7 +1342,7 @@ function New-ListenerScriptBlock {
                             if ($bytesRead -gt 0) {
                                 $clientState.LastActivity = Get-Date
                                 $clientState.Buffer += [Text.Encoding]::UTF8.GetString($readBuffer, 0, $bytesRead)
-                                $parsed = Get-CompletedTcpMessages -Buffer $clientState.Buffer
+                                $parsed = Get-CompletedTcpMessage -Buffer $clientState.Buffer
                                 foreach ($message in $parsed.Messages) {
                                     Register-ReceivedMessage -Protocol 'TCP' -Address $clientState.Address -RawMessage $message
                                 }
@@ -1357,8 +1357,8 @@ function New-ListenerScriptBlock {
                     }
 
                     if ($removeClient) {
-                        try { $clientState.Stream.Dispose() } catch {}
-                        try { $clientState.Client.Dispose() } catch {}
+                        try { $clientState.Stream.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
+                        try { $clientState.Client.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
                         $tcpClients.RemoveAt($index)
                     }
                 }
@@ -1378,20 +1378,20 @@ function New-ListenerScriptBlock {
                         Register-ReceivedMessage -Protocol 'TCP' -Address $clientState.Address -RawMessage $clientState.Buffer
                     }
                 }
-                catch {}
-                try { $clientState.Stream.Dispose() } catch {}
-                try { $clientState.Client.Dispose() } catch {}
+                catch { Write-Verbose "An error occurred and was ignored." }
+                try { $clientState.Stream.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
+                try { $clientState.Client.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
             }
             if ($udpClient) {
-                try { $udpClient.Dispose() } catch {}
+                try { $udpClient.Dispose() } catch { Write-Verbose "An error occurred and was ignored." }
             }
             if ($tcpListener) {
-                try { $tcpListener.Stop() } catch {}
+                try { $tcpListener.Stop() } catch { Write-Verbose "An error occurred and was ignored." }
             }
             try {
                 Write-LogRecord -Category 'server' -SourceName 'server' -Message 'Listener stopped.'
             }
-            catch {}
+            catch { Write-Verbose "An error occurred and was ignored." }
             $Runtime.Running = $false
             $Runtime.StopRequested = $false
             if (-not $Runtime.LastError) {
@@ -1420,7 +1420,7 @@ function Get-EffectiveStatus {
     return 'Stopped'
 }
 
-function Update-MenuState {
+function Initialize-MenuState {
     if (-not $script:StatusItem) {
         return
     }
@@ -1461,7 +1461,7 @@ function Update-MenuState {
     }
 }
 
-function Start-Listener {
+function Initialize-Listener {
     $config = Get-AppConfig
     if (-not [bool] $config.IsConfigured) {
         Show-ConfigureForm -StartAfterSave
@@ -1486,7 +1486,7 @@ function Start-Listener {
     }
 
     $settings = $config.Clone()
-    Resolve-LogLayout -Settings $settings
+    Confirm-LogLayout -Settings $settings
 
     $script:Runtime.StopRequested = $false
     $script:Runtime.LastError = ''
@@ -1523,7 +1523,7 @@ function Start-Listener {
         $script:ListenerRunspace.Open()
         $script:ListenerPowerShell = [PowerShell]::Create()
         $script:ListenerPowerShell.Runspace = $script:ListenerRunspace
-        [void] $script:ListenerPowerShell.AddScript((New-ListenerScriptBlock)).AddArgument($settings).AddArgument($script:Runtime)
+        [void] $script:ListenerPowerShell.AddScript((Initialize-ListenerScriptBlock)).AddArgument($settings).AddArgument($script:Runtime)
         $script:ListenerHandle = $script:ListenerPowerShell.BeginInvoke()
         Write-AppLog -Message 'Listener start requested.'
     }
@@ -1537,21 +1537,21 @@ function Start-Listener {
         )
     }
 
-    Update-MenuState
+    Initialize-MenuState
 }
 
-function Stop-Listener {
+function Suspend-Listener {
     if (-not [bool] $script:Runtime.Running -and -not $script:ListenerHandle) {
         return
     }
 
     $script:Runtime.StopRequested = $true
     Write-AppLog -Message 'Listener stop requested.' -Diagnostic
-    Update-MenuState
+    Initialize-MenuState
 }
 
 function Exit-App {
-    Stop-Listener
+    Suspend-Listener
     if ($script:UiTimer) {
         $script:UiTimer.Stop()
     }
@@ -1562,7 +1562,7 @@ function Exit-App {
     [System.Windows.Forms.Application]::Exit()
 }
 
-function Invoke-CheckForUpdates {
+function Invoke-CheckForUpdate {
     try {
         Write-AppLog -Message 'Checking GitHub for updates.' -Diagnostic
         $releaseInfo = Get-LatestReleaseInfo
@@ -1598,7 +1598,7 @@ Download and install the update now?
         }
 
         Write-AppLog -Message ('Starting update install for version {0}.' -f $releaseInfo.Version)
-        Start-UpdateInstallerProcess -ReleaseInfo $releaseInfo
+        Initialize-UpdateInstallerProcess -ReleaseInfo $releaseInfo
         Exit-App
     }
     catch {
@@ -1637,7 +1637,7 @@ function Show-ConfigureForm {
     param([switch] $StartAfterSave)
 
     $config = (Get-AppConfig).Clone()
-    $colors = Get-ThemeColors -Theme $config.Theme
+    $colors = Get-ThemeColor -Theme $config.Theme
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'Configure Listener'
@@ -1647,17 +1647,17 @@ function Show-ConfigureForm {
     $form.MinimizeBox = $false
     $form.ClientSize = New-Object System.Drawing.Size(520, 330)
 
-    $bindLabel = New-Label -Text 'Listen IP' -X 18 -Y 22 -Width 120
+    $bindLabel = Initialize-Label -Text 'Listen IP' -X 18 -Y 22 -Width 120
     $bindCombo = New-Object System.Windows.Forms.ComboBox
     $bindCombo.Location = New-Object System.Drawing.Point(150, 20)
     $bindCombo.Size = New-Object System.Drawing.Size(250, 24)
     $bindCombo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDown
-    foreach ($address in (Get-LocalIPv4Addresses)) {
+    foreach ($address in (Get-LocalIpv4Address)) {
         [void] $bindCombo.Items.Add($address)
     }
     $bindCombo.Text = [string] $config.BindAddress
 
-    $suggestButton = New-Button -Text 'Suggest' -X 410 -Y 18 -Width 80
+    $suggestButton = Initialize-Button -Text 'Suggest' -X 410 -Y 18 -Width 80
     $suggestButton.Add_Click({
         $suggested = Get-SuggestedBindAddress
         if (-not [string]::IsNullOrWhiteSpace($suggested)) {
@@ -1677,7 +1677,7 @@ function Show-ConfigureForm {
     $udpPort.Minimum = 0
     $udpPort.Maximum = 65535
     $udpPort.Value = [int] $config.UdpPort
-    $udpRec = New-Label -Text '(Recommended)' -X 310 -Y 65 -Width 130
+    $udpRec = Initialize-Label -Text '(Recommended)' -X 310 -Y 65 -Width 130
 
     $tcpCheck = New-Object System.Windows.Forms.CheckBox
     $tcpCheck.Text = 'TCP'
@@ -1691,7 +1691,7 @@ function Show-ConfigureForm {
     $tcpPort.Minimum = 0
     $tcpPort.Maximum = 65535
     $tcpPort.Value = [int] $config.TcpPort
-    $tcpRec = New-Label -Text '(Recommended)' -X 310 -Y 100 -Width 130
+    $tcpRec = Initialize-Label -Text '(Recommended)' -X 310 -Y 100 -Width 130
 
     $hostCheck = New-Object System.Windows.Forms.CheckBox
     $hostCheck.Text = 'Resolve source names'
@@ -1699,13 +1699,13 @@ function Show-ConfigureForm {
     $hostCheck.Size = New-Object System.Drawing.Size(210, 24)
     $hostCheck.Checked = [bool] $config.ResolveHostNames
 
-    $logLabel = New-Label -Text 'Log folder' -X 18 -Y 178 -Width 120
+    $logLabel = Initialize-Label -Text 'Log folder' -X 18 -Y 178 -Width 120
     $logBox = New-Object System.Windows.Forms.TextBox
     $logBox.Location = New-Object System.Drawing.Point(150, 176)
     $logBox.Size = New-Object System.Drawing.Size(260, 24)
     $logBox.Text = [string] $config.LogRoot
 
-    $browseButton = New-Button -Text 'Browse' -X 420 -Y 174 -Width 70
+    $browseButton = Initialize-Button -Text 'Browse' -X 420 -Y 174 -Width 70
     $browseButton.Add_Click({
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
         $dialog.SelectedPath = $logBox.Text
@@ -1721,8 +1721,8 @@ function Show-ConfigureForm {
     $startCheck.Size = New-Object System.Drawing.Size(220, 24)
     $startCheck.Checked = [bool] $StartAfterSave
 
-    $saveButton = New-Button -Text 'Save' -X 285 -Y 280 -Width 90
-    $cancelButton = New-Button -Text 'Cancel' -X 395 -Y 280 -Width 90
+    $saveButton = Initialize-Button -Text 'Save' -X 285 -Y 280 -Width 90
+    $cancelButton = Initialize-Button -Text 'Cancel' -X 395 -Y 280 -Width 90
     $cancelButton.Add_Click({ $form.Close() })
     $saveButton.Add_Click({
         try {
@@ -1766,7 +1766,7 @@ function Show-ConfigureForm {
 
     $form.Controls.AddRange(@(
         $bindLabel, $bindCombo, $suggestButton,
-        (New-Label -Text 'Network' -X 18 -Y 68 -Width 120),
+        (Initialize-Label -Text 'Network' -X 18 -Y 68 -Width 120),
         $udpCheck, $udpPort, $udpRec,
         $tcpCheck, $tcpPort, $tcpRec,
         $hostCheck,
@@ -1774,19 +1774,19 @@ function Show-ConfigureForm {
         $startCheck, $saveButton, $cancelButton
     ))
 
-    Apply-ThemeToControl -Control $form -Colors $colors
+    Initialize-ThemeToControl -Control $form -Colors $colors
     [void] $form.ShowDialog()
 
     if ($form.Tag -and [bool] $form.Tag.StartAfterSave) {
-        Start-Listener
+        Initialize-Listener
     }
-    Update-MenuState
+    Initialize-MenuState
     $form.Dispose()
 }
 
 function Show-SettingsForm {
     $config = (Get-AppConfig).Clone()
-    $colors = Get-ThemeColors -Theme $config.Theme
+    $colors = Get-ThemeColor -Theme $config.Theme
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'Settings'
@@ -1808,7 +1808,7 @@ function Show-SettingsForm {
     $diagCheck.Size = New-Object System.Drawing.Size(220, 24)
     $diagCheck.Checked = [bool] $config.DiagnosticLogging
 
-    $themeLabel = New-Label -Text 'Theme' -X 20 -Y 90 -Width 90
+    $themeLabel = Initialize-Label -Text 'Theme' -X 20 -Y 90 -Width 90
     $themeCombo = New-Object System.Windows.Forms.ComboBox
     $themeCombo.Location = New-Object System.Drawing.Point(130, 88)
     $themeCombo.Size = New-Object System.Drawing.Size(140, 24)
@@ -1847,10 +1847,10 @@ function Show-SettingsForm {
     $tcpPort.Maximum = 65535
     $tcpPort.Value = [int] $config.TcpPort
 
-    $udpRecommended = New-Label -Text '(Recommended)' -X 190 -Y 32 -Width 120
-    $tcpRecommended = New-Label -Text '(Recommended)' -X 190 -Y 66 -Width 120
+    $udpRecommended = Initialize-Label -Text '(Recommended)' -X 190 -Y 32 -Width 120
+    $tcpRecommended = Initialize-Label -Text '(Recommended)' -X 190 -Y 66 -Width 120
 
-    $firewallButton = New-Button -Text 'Add Exception to Firewall for this App' -X 18 -Y 106 -Width 470 -Height 32
+    $firewallButton = Initialize-Button -Text 'Add Exception to Firewall for this App' -X 18 -Y 106 -Width 470 -Height 32
     $firewallButton.Add_Click({
         try {
             $tempConfig = $config.Clone()
@@ -1912,17 +1912,17 @@ function Show-SettingsForm {
     $archiveCap.Enabled = $false
 
     $sizeGroup.Controls.AddRange(@(
-        (New-Label -Text 'Rotate active logs at MB' -X 18 -Y 28 -Width 180), $rotateSize,
-        (New-Label -Text 'Rotate active logs at minutes' -X 18 -Y 58 -Width 180), $rotateAge,
-        (New-Label -Text 'Compressed archive cap MB' -X 18 -Y 88 -Width 180), $archiveCap
+        (Initialize-Label -Text 'Rotate active logs at MB' -X 18 -Y 28 -Width 180), $rotateSize,
+        (Initialize-Label -Text 'Rotate active logs at minutes' -X 18 -Y 58 -Width 180), $rotateAge,
+        (Initialize-Label -Text 'Compressed archive cap MB' -X 18 -Y 88 -Width 180), $archiveCap
     ))
 
-    $logLabel = New-Label -Text 'Log folder' -X 20 -Y 442 -Width 90
+    $logLabel = Initialize-Label -Text 'Log folder' -X 20 -Y 442 -Width 90
     $logBox = New-Object System.Windows.Forms.TextBox
     $logBox.Location = New-Object System.Drawing.Point(130, 440)
     $logBox.Size = New-Object System.Drawing.Size(300, 24)
     $logBox.Text = [string] $config.LogRoot
-    $browseButton = New-Button -Text 'Browse' -X 440 -Y 438 -Width 80
+    $browseButton = Initialize-Button -Text 'Browse' -X 440 -Y 438 -Width 80
     $browseButton.Add_Click({
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
         $dialog.SelectedPath = $logBox.Text
@@ -1932,8 +1932,8 @@ function Show-SettingsForm {
         $dialog.Dispose()
     })
 
-    $saveButton = New-Button -Text 'Save' -X 335 -Y 492 -Width 90
-    $cancelButton = New-Button -Text 'Cancel' -X 445 -Y 492 -Width 90
+    $saveButton = Initialize-Button -Text 'Save' -X 335 -Y 492 -Width 90
+    $cancelButton = Initialize-Button -Text 'Cancel' -X 445 -Y 492 -Width 90
     $cancelButton.Add_Click({ $form.Close() })
     $saveButton.Add_Click({
         try {
@@ -1977,11 +1977,11 @@ function Show-SettingsForm {
         $saveButton, $cancelButton
     ))
 
-    Apply-ThemeToControl -Control $form -Colors $colors
+    Initialize-ThemeToControl -Control $form -Colors $colors
     $udpRecommended.ForeColor = $colors.Muted
     $tcpRecommended.ForeColor = $colors.Muted
     [void] $form.ShowDialog()
-    Update-MenuState
+    Initialize-MenuState
     $form.Dispose()
 }
 
@@ -2001,11 +2001,11 @@ function Build-ContextMenu {
 
     $script:StartItem = New-Object System.Windows.Forms.ToolStripMenuItem
     $script:StartItem.Text = 'Start'
-    $script:StartItem.Add_Click({ Start-Listener })
+    $script:StartItem.Add_Click({ Initialize-Listener })
 
     $script:StopItem = New-Object System.Windows.Forms.ToolStripMenuItem
     $script:StopItem.Text = 'Stop'
-    $script:StopItem.Add_Click({ Stop-Listener })
+    $script:StopItem.Add_Click({ Suspend-Listener })
 
     $script:OpenLatestItem = New-Object System.Windows.Forms.ToolStripMenuItem
     $script:OpenLatestItem.Text = 'Open Latest Log'
@@ -2017,7 +2017,7 @@ function Build-ContextMenu {
 
     $updateItem = New-Object System.Windows.Forms.ToolStripMenuItem
     $updateItem.Text = 'Check for Updates ...'
-    $updateItem.Add_Click({ Invoke-CheckForUpdates })
+    $updateItem.Add_Click({ Invoke-CheckForUpdate })
 
     $settings = New-Object System.Windows.Forms.ToolStripMenuItem
     $settings.Text = 'Settings'
@@ -2046,12 +2046,12 @@ function Build-ContextMenu {
     [void] $script:ContextMenu.Items.Add($about)
     [void] $script:ContextMenu.Items.Add($exit)
 
-    $script:ContextMenu.Add_Opening({ Update-MenuState })
+    $script:ContextMenu.Add_Opening({ Initialize-MenuState })
 }
 
 function Invoke-SelfTest {
     $config = Get-AppConfig
-    Resolve-LogLayout -Settings $config
+    Confirm-LogLayout -Settings $config
     Write-AppLog -Message 'Self-test diagnostic log entry.' -Diagnostic
     'SELFTEST_OK'
 }
@@ -2070,7 +2070,7 @@ function Invoke-ListenerSelfTest {
     Save-AppConfig -Config $config
 
     try {
-        Start-Listener
+        Initialize-Listener
         Start-Sleep -Milliseconds 700
 
         $udp = New-Object System.Net.Sockets.UdpClient
@@ -2107,9 +2107,9 @@ function Invoke-ListenerSelfTest {
         }
 
         Start-Sleep -Seconds 2
-        Stop-Listener
+        Suspend-Listener
         Start-Sleep -Seconds 1
-        Update-MenuState
+        Initialize-MenuState
 
         $allLogs = @(Get-ChildItem -LiteralPath $config.LogRoot -Recurse -File -Filter '*.log' -ErrorAction SilentlyContinue)
         if ($allLogs.Count -eq 0) {
@@ -2132,7 +2132,7 @@ function Invoke-ListenerSelfTest {
         'LISTENER_SELFTEST_OK'
     }
     finally {
-        Stop-Listener
+        Suspend-Listener
         Save-AppConfig -Config $originalConfig
     }
 }
@@ -2148,7 +2148,7 @@ function Invoke-UpdateCheckSelfTest {
     'UPDATE_CHECK_OK {0} {1}' -f $releaseInfo.Version, $releaseInfo.AssetName
 }
 
-function Start-GWRouterLoggerTrayApp {
+function Initialize-GWRouterLoggerTrayApp {
     param(
         [switch] $FirewallOnly,
         [switch] $SelfTest,
@@ -2205,19 +2205,19 @@ function Start-GWRouterLoggerTrayApp {
 
         $script:UiTimer = New-Object System.Windows.Forms.Timer
         $script:UiTimer.Interval = 1000
-        $script:UiTimer.Add_Tick({ Update-MenuState })
+        $script:UiTimer.Add_Tick({ Initialize-MenuState })
         $script:UiTimer.Start()
 
-        Update-MenuState
+        Initialize-MenuState
         Write-AppLog -Message ('Tray startup reached. StartListener={0}' -f [bool] $StartListener)
         if ($StartListener) {
-            Start-Listener
+            Initialize-Listener
         }
         Write-AppLog -Message 'Tray application started.' -Diagnostic
         [System.Windows.Forms.Application]::Run()
     }
     finally {
-        Stop-Listener
+        Suspend-Listener
         if ($script:UiTimer) {
             $script:UiTimer.Stop()
             $script:UiTimer.Dispose()
@@ -2233,4 +2233,4 @@ function Start-GWRouterLoggerTrayApp {
     }
 }
 
-Export-ModuleMember -Function Start-GWRouterLoggerTrayApp
+Export-ModuleMember -function Initialize-GWRouterLoggerTrayApp
