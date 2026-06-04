@@ -1,10 +1,29 @@
 # GW Router Logger
 
-`GW Router Logger` is a PowerShell syslog collector for Windows, designed for home labs, residential routers, and small-network troubleshooting.
+![Version](https://img.shields.io/badge/version-1.3.4-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
+![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+
+`GW Router Logger` is a professionally built, full-featured PowerShell syslog collector for Windows. It is designed specifically for home labs, residential routers, and small-network troubleshooting.
 
 Current release: `v1.3.4`
 
 It focuses on the things that usually break first on normal Windows machines: elevation, pathing, firewall access, bind-address selection, log rollover, and clear on-screen status.
+
+## Table of Contents
+- [Why this exists](#why-this-exists)
+- [Highlights](#highlights)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+  - [Install](#install)
+  - [CLI script](#cli-script)
+- [Default behavior](#default-behavior)
+- [Log layout](#log-layout)
+- [Runtime controls](#runtime-controls)
+- [Project goals](#project-goals)
+- [Notes](#notes)
+- [License](#license)
 
 ## Why this exists
 
@@ -143,6 +162,7 @@ While the listener is running:
 
 ## Notes
 
+- The project is fully self-contained. The CLI and tray mode share the same entry point.
 - The script is intentionally PowerShell-first and Windows-focused.
 - The UI is designed to be readable during real use, not overloaded with animation while logs are arriving.
 - Defaults can be adjusted from the built-in `Change defaults` menu.
