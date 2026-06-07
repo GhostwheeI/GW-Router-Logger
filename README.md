@@ -1,10 +1,29 @@
 # GW Router Logger
 
+[![PowerShell Version](https://img.shields.io/badge/PowerShell-5.1+-blue.svg)](https://microsoft.com/PowerShell)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 `GW Router Logger` is a PowerShell syslog collector for Windows, designed for home labs, residential routers, and small-network troubleshooting.
 
 Current release: `v1.3.4`
 
 It focuses on the things that usually break first on normal Windows machines: elevation, pathing, firewall access, bind-address selection, log rollover, and clear on-screen status.
+
+## Table of Contents
+- [Why this exists](#why-this-exists)
+- [Highlights](#highlights)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+  - [Install](#install)
+  - [CLI script](#cli-script)
+- [Default behavior](#default-behavior)
+- [Log layout](#log-layout)
+- [Runtime controls](#runtime-controls)
+- [Project goals](#project-goals)
+- [Support and Troubleshooting](#support-and-troubleshooting)
+- [Contributing](#contributing)
+- [Notes](#notes)
+- [License](#license)
 
 ## Why this exists
 
@@ -140,6 +159,18 @@ While the listener is running:
 - Be understandable to someone reading the script later
 - Prefer validation and fallback behavior over hidden assumptions
 - Be useful as a practical router logging tool, not just a demo
+
+## Support and Troubleshooting
+
+If you encounter issues while using `GW Router Logger`, please refer to the following:
+- Ensure you are running PowerShell as Administrator.
+- Verify your router is configured to send syslog to the IP address displayed in the application.
+- Check Windows Firewall settings to ensure the necessary ports (default UDP 514) are open.
+- If you find a bug or need help, please [open an issue](https://github.com/Ghostwheel/GW-Router-Logger/issues).
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to report bugs, request features, and submit pull requests. Ensure you also review our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Notes
 
