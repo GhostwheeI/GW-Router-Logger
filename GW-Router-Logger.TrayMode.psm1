@@ -87,6 +87,7 @@ function Get-AppDataRoot {
             return $programDataPath
         }
         catch {
+            Write-Verbose "An error occurred and was ignored."
             # Fall back to a per-user app data folder when ProgramData is not writable.
         }
     }
@@ -397,6 +398,7 @@ function Write-AppLog {
         Add-Content -LiteralPath (Get-AppLogPath) -Value $line -Encoding UTF8
     }
     catch {
+        Write-Verbose "An error occurred and was ignored."
         # Diagnostic logging must never break the tray app.
     }
 }
@@ -983,7 +985,7 @@ function Initialize-FirewallRule {
         return
     }
     catch {
-        $args = @(
+        $netshArgs = @(
             'advfirewall', 'firewall', 'add', 'rule',
             ('name="{0}"' -f $ruleName),
             'dir=in',
@@ -991,7 +993,7 @@ function Initialize-FirewallRule {
             ('protocol={0}' -f $Protocol),
             ('localport={0}' -f $Port)
         )
-        $process = Start-Process -FilePath 'netsh.exe' -ArgumentList $args -Wait -PassThru -WindowStyle Hidden
+        $process = Start-Process -FilePath 'netsh.exe' -ArgumentList $netshArgs -Wait -PassThru -WindowStyle Hidden
         if ($process.ExitCode -ne 0) {
             throw "netsh failed while adding firewall rule $ruleName."
         }
@@ -1002,7 +1004,7 @@ function Add-FirewallRulesForConfig {
     param([hashtable] $Config)
 
     if (-not (Test-IsAdministrator)) {
-        $args = @(
+        $processArgs = @(
             '-NoProfile',
             '-ExecutionPolicy', 'Bypass',
             '-File', ('"{0}"' -f (Get-LauncherScriptPath)),
@@ -1010,7 +1012,7 @@ function Add-FirewallRulesForConfig {
             '-FirewallUdpPort', ([string] $(if ([bool] $Config.UdpEnabled) { [int] $Config.UdpPort } else { 0 })),
             '-FirewallTcpPort', ([string] $(if ([bool] $Config.TcpEnabled) { [int] $Config.TcpPort } else { 0 }))
         )
-        Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $args -Verb RunAs | Out-Null
+        Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $processArgs -Verb RunAs | Out-Null
         return
     }
 
@@ -1023,6 +1025,7 @@ function Add-FirewallRulesForConfig {
 }
 
 function Invoke-FirewallOnlyMode {
+    param([int]$FirewallUdpPort, [int]$FirewallTcpPort)
     if (-not (Test-IsAdministrator)) {
         throw 'Firewall setup requires Administrator rights.'
     }
@@ -1178,7 +1181,6 @@ function Initialize-ListenerScriptBlock {
         function Write-LogRecord {
             param(
                 [string] $Category,
-                [string] $SourceName,
                 [string] $Message
             )
 
@@ -1226,8 +1228,8 @@ function Initialize-ListenerScriptBlock {
             }
 
             $messageLine = '{0} [{1}] {2}' -f $Address, $Protocol, $RawMessage.Trim()
-            Write-LogRecord -Category 'source' -SourceName $sourceIdentity -Message $messageLine
-            Write-LogRecord -Category 'server' -SourceName 'server' -Message ('Received {0} message from {1}: {2}' -f $Protocol, $sourceIdentity, (Get-SyslogSummary -RawMessage $RawMessage))
+            Write-LogRecord -Category 'source' -Message $messageLine
+            Write-LogRecord -Category 'server' -Message ('Received {0} message from {1}: {2}' -f $Protocol, $sourceIdentity, (Get-SyslogSummary -RawMessage $RawMessage))
         }
 
         function Get-CompletedTcpMessage {
@@ -1276,13 +1278,13 @@ function Initialize-ListenerScriptBlock {
                 $udpEndpoint = New-Object System.Net.IPEndPoint $bindIp, ([int] $Settings.UdpPort)
                 $udpClient = New-Object System.Net.Sockets.UdpClient
                 $udpClient.Client.Bind($udpEndpoint)
-                Write-LogRecord -Category 'server' -SourceName 'server' -Message ('UDP listener started on {0}:{1}.' -f $Settings.BindAddress, $Settings.UdpPort)
+                Write-LogRecord -Category 'server' -Message ('UDP listener started on {0}:{1}.' -f $Settings.BindAddress, $Settings.UdpPort)
             }
 
             if ([bool] $Settings.TcpEnabled) {
                 $tcpListener = New-Object System.Net.Sockets.TcpListener $bindIp, ([int] $Settings.TcpPort)
                 $tcpListener.Start()
-                Write-LogRecord -Category 'server' -SourceName 'server' -Message ('TCP listener started on {0}:{1}.' -f $Settings.BindAddress, $Settings.TcpPort)
+                Write-LogRecord -Category 'server' -Message ('TCP listener started on {0}:{1}.' -f $Settings.BindAddress, $Settings.TcpPort)
             }
 
             $Runtime.Running = $true
@@ -1314,7 +1316,7 @@ function Initialize-ListenerScriptBlock {
                             LastActivity = Get-Date
                         }
                         [void] $tcpClients.Add($clientState)
-                        Write-LogRecord -Category 'server' -SourceName 'server' -Message ('TCP client connected: {0}' -f $clientState.Address)
+                        Write-LogRecord -Category 'server' -Message ('TCP client connected: {0}' -f $clientState.Address)
                     }
                 }
 
@@ -1327,7 +1329,7 @@ function Initialize-ListenerScriptBlock {
                             if ($clientState.Buffer) {
                                 Register-ReceivedMessage -Protocol 'TCP' -Address $clientState.Address -RawMessage $clientState.Buffer
                             }
-                            Write-LogRecord -Category 'server' -SourceName 'server' -Message ('TCP client idle timeout: {0}' -f $clientState.Address)
+                            Write-LogRecord -Category 'server' -Message ('TCP client idle timeout: {0}' -f $clientState.Address)
                             $removeClient = $true
                         }
                         elseif (Test-TcpClientClosed -TcpClient $clientState.Client) {
@@ -1352,7 +1354,7 @@ function Initialize-ListenerScriptBlock {
                     }
                     catch {
                         $Runtime.LastError = 'TCP client error: ' + $_.Exception.Message
-                        Write-LogRecord -Category 'server' -SourceName 'server' -Message $Runtime.LastError
+                        Write-LogRecord -Category 'server' -Message $Runtime.LastError
                         $removeClient = $true
                     }
 
@@ -1389,7 +1391,7 @@ function Initialize-ListenerScriptBlock {
                 try { $tcpListener.Stop() } catch { Write-Verbose "An error occurred and was ignored." }
             }
             try {
-                Write-LogRecord -Category 'server' -SourceName 'server' -Message 'Listener stopped.'
+                Write-LogRecord -Category 'server' -Message 'Listener stopped.'
             }
             catch { Write-Verbose "An error occurred and was ignored." }
             $Runtime.Running = $false
@@ -2148,6 +2150,13 @@ function Invoke-UpdateCheckSelfTest {
     'UPDATE_CHECK_OK {0} {1}' -f $releaseInfo.Version, $releaseInfo.AssetName
 }
 
+<#
+.SYNOPSIS
+Initializes and runs the GW Router Logger tray application.
+
+.DESCRIPTION
+Sets up the context menu, system tray icon, and background task processing.
+#>
 function Initialize-GWRouterLoggerTrayApp {
     param(
         [switch] $FirewallOnly,
@@ -2160,7 +2169,7 @@ function Initialize-GWRouterLoggerTrayApp {
     )
 
     if ($FirewallOnly) {
-        Invoke-FirewallOnlyMode
+        Invoke-FirewallOnlyMode -FirewallUdpPort $FirewallUdpPort -FirewallTcpPort $FirewallTcpPort
         return
     }
 
