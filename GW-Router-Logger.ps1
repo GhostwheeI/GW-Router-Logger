@@ -1,3 +1,5 @@
+[CmdletBinding()]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification='CLI UI')]
 param(
     [switch] $TrayApp,
     [switch] $FirewallOnly,
@@ -68,7 +70,7 @@ if ($TrayApp -or $FirewallOnly -or $SelfTest -or $ListenerSelfTest -or $UpdateCh
     }
 
     Import-Module -Name $trayModulePath -Force -DisableNameChecking
-    Start-GWRouterLoggerTrayApp `
+    Initialize-GWRouterLoggerTrayApp `
         -FirewallOnly:$FirewallOnly `
         -SelfTest:$SelfTest `
         -ListenerSelfTest:$ListenerSelfTest `
@@ -310,6 +312,8 @@ function Merge-TextFileIntoPath {
 }
 
 function Remove-DirectoryIfEmpty {
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     param([string] $Path)
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -367,6 +371,8 @@ function Get-TimestampString {
 }
 
 function New-RuntimeState {
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     param([hashtable] $Settings)
 
     return @{
@@ -802,7 +808,7 @@ function Get-SafeLogPath {
     return (Join-Path -Path $Directory -ChildPath ('{0}-{1}{2}' -f $trimmed, $hash, $Suffix))
 }
 
-function Archive-LogFile {
+function Compress-LogFile {
     param(
         [Parameter(Mandatory = $true)] [string] $LogFilePath,
         [Parameter(Mandatory = $true)] [string] $ArchiveDirectory,
@@ -894,7 +900,6 @@ function Write-LogRecord {
         [hashtable] $Settings,
         [hashtable] $State,
         [string] $Category,
-        [string] $SourceName,
         [string] $Message
     )
 
@@ -911,7 +916,7 @@ function Write-LogRecord {
     $line = '{0} [{1}] {2}' -f $timestamp, $Category.ToUpperInvariant(), $Message
     try {
         Add-Content -LiteralPath $targetPath -Value $line -Encoding UTF8
-        $rotated = Archive-LogFile -LogFilePath $targetPath -ArchiveDirectory $archiveRoot -State $State
+        $rotated = Compress-LogFile -LogFilePath $targetPath -ArchiveDirectory $archiveRoot -State $State
         if ($rotated) {
             Limit-CompressedArchive -RootPath $Settings.LogRoot -State $State
         }
@@ -931,7 +936,7 @@ function Write-ServerEvent {
         [string] $Message
     )
 
-    Write-LogRecord -Settings $Settings -State $State -Category 'server' -SourceName 'server' -Message $Message
+    Write-LogRecord -Settings $Settings -State $State -Category 'server' -Message $Message
 }
 
 function Resolve-SourceIdentity {
@@ -1191,7 +1196,7 @@ function Register-ReceivedMessage {
     # troubleshooting can continue even after the console session ends.
     Add-RecentEvent -State $State -Message ("$Protocol message from $sourceIdentity")
     $messageLine = '{0} [{1}] {2}' -f $Address, $Protocol, $RawMessage.Trim()
-    Write-LogRecord -Settings $Settings -State $State -Category 'source' -SourceName $sourceIdentity -Message $messageLine
+    Write-LogRecord -Settings $Settings -State $State -Category 'source' -Message $messageLine
     Write-ServerEvent -Settings $Settings -State $State -Message ("Received {0} message from {1}: {2}" -f $Protocol, $sourceIdentity, $summary)
 }
 
@@ -1299,8 +1304,8 @@ function Show-StatusScreen {
     }
 
     $recentEventsText = ''
-    foreach ($event in $State.RecentEvents) {
-        $recentEventsText += $event + "`n"
+    foreach ($recentEvent in $State.RecentEvents) {
+        $recentEventsText += $recentEvent + "`n"
     }
 
     $signature = '{0}|{1}|{2}|{3}|{4}|{5}|{6}' -f `
@@ -1360,9 +1365,9 @@ function Show-StatusScreen {
         Write-UiLine '  Waiting for activity...' DarkGray
     }
     else {
-        foreach ($event in $State.RecentEvents) {
+        foreach ($recentEvent in $State.RecentEvents) {
             Write-Host '  ' -NoNewline
-            Write-UiLine $event Gray
+            Write-UiLine $recentEvent Gray
         }
     }
 
@@ -1376,6 +1381,8 @@ function Show-StatusScreen {
 }
 
 function Start-LogServer {
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     param([hashtable] $Settings)
 
     # This is the core runtime wrapper. Everything needed for environment validation happens

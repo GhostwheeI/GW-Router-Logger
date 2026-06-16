@@ -1,3 +1,5 @@
+[CmdletBinding()]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification='CLI UI')]
 param(
     [switch] $Quiet,
     [switch] $RemoveData
